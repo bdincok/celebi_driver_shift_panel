@@ -1842,16 +1842,70 @@ def page_history() -> None:
 def page_reports() -> None:
     render_header(
         "Analiz ve Raporlama",
-        "Operasyon yoğunluğunu tarih, vardiya, grup ve araç bazında grafiklerle değerlendir.",
+        "Tarih aralığına göre rapor al; isme veya plakaya göre arama yaparak kimin hangi aracı kullandığını detaylı incele.",
     )
 
-    c1, c2 = st.columns(2)
-    start_date = c1.date_input("Rapor başlangıç", value=date.today() - timedelta(days=30), format="DD.MM.YYYY", key="report_start")
-    end_date = c2.date_input("Rapor bitiş", value=date.today(), format="DD.MM.YYYY", key="report_end")
+    drivers = get_driver_options(active_only=False)
+    all_shifts_df = read_df("SELECT DISTINCT shift FROM shift_logs ORDER BY shift")
+    shift_options = ["Tümü"] + (all_shifts_df["shift"].tolist() if not all_shifts_df.empty else DEFAULT_SHIFTS)
+    plate_options = ["Tümü"] + get_plate_options(include_inactive=True, include_log_values=True)
 
-    df = get_shift_logs(start_date, end_date)
+    with st.expander("Rapor filtreleri", expanded=True):
+        c1, c2, c3, c4 = st.columns(4)
+        start_date = c1.date_input("Rapor başlangıç", value=date.today() - timedelta(days=30), format="DD.MM.YYYY", key="report_start")
+        end_date = c2.date_input("Rapor bitiş", value=date.today(), format="DD.MM.YYYY", key="report_end")
+        all_time = c3.checkbox("Tüm zamanlar", value=False, key="report_all_time")
+        include_passive = c4.checkbox("Pasif sürücüleri dahil et", value=True, key="report_include_passive")
+
+        c5, c6, c7 = st.columns([1.3, 1.8, 1])
+        driver_search = c5.text_input(
+            "İsim içinde ara",
+            placeholder="Örn: Umut, Mehmet, Yasin",
+            key="report_driver_search",
+        )
+        driver_label_options = ["Tümü"] + [f"{d['full_name']} · {d['group_name']}" for d in drivers]
+        driver_label = c6.selectbox("Net personel seç", driver_label_options, key="report_driver_exact")
+        driver_id = None
+        if driver_label != "Tümü":
+            driver_id = int(drivers[driver_label_options.index(driver_label) - 1]["id"])
+        shift_filter = c7.selectbox("Vardiya", shift_options, key="report_shift")
+
+        c8, c9 = st.columns([1.4, 1.6])
+        plate_exact = c8.selectbox("Net plaka seç", plate_options, key="report_plate_exact")
+        plate_search = c9.text_input(
+            "Plaka içinde ara",
+            placeholder="Örn: TBTU0003, 900001",
+            key="report_plate_search",
+        )
+
+        st.caption(
+            "Örnek kullanım: Sadece plaka seçersen o plakayı belirtilen tarihlerde kimlerin kullandığını görürsün. "
+            "Sadece isim seçersen belirtilen tarihlerde o personelin hangi plakalarla, hangi vardiyalarda çalıştığını görürsün."
+        )
+
+    if start_date > end_date and not all_time:
+        st.error("Başlangıç tarihi bitiş tarihinden büyük olamaz.")
+        return
+
+    df = get_shift_logs(
+        start=None if all_time else start_date,
+        end=None if all_time else end_date,
+        driver_id=driver_id,
+        shift=shift_filter,
+        plate_exact=plate_exact,
+        plate_contains=plate_search,
+        include_passive=include_passive,
+    )
+
+    if driver_search.strip() and not df.empty:
+        token = normalize_name(driver_search)
+        df = df[df["Sürücü"].astype(str).str.upper().str.contains(token, na=False, regex=False)]
+
+    active_driver_filter = driver_id is not None or bool(driver_search.strip())
+    active_plate_filter = (plate_exact != "Tümü") or bool(plate_search.strip())
+
     if df.empty:
-        st.info("Seçilen tarih aralığında raporlanacak kayıt yok.")
+        st.info("Seçilen tarih / isim / plaka filtresine uygun raporlanacak kayıt bulunamadı.")
         return
 
     c1, c2, c3, c4 = st.columns(4)
@@ -1860,12 +1914,71 @@ def page_reports() -> None:
     c3.metric("Sürücü", df["Sürücü"].nunique())
     c4.metric("Araç", df["Araç Plakası"].nunique())
 
+    if active_plate_filter:
+        st.markdown("### Plaka kullanım özeti")
+        st.caption("Bu bölüm seçilen plakanın veya plaka aramasının belirtilen tarihlerde kimler tarafından kullanıldığını gösterir.")
+        plate_summary = (
+            df.groupby(["Araç Plakası", "Sürücü", "Grup"], dropna=False)
+            .agg(
+                Kullanım=("Kayıt ID", "count"),
+                İlk_Tarih=("Tarih", "min"),
+                Son_Tarih=("Tarih", "max"),
+                Vardiyalar=("Vardiya", lambda values: ", ".join(sorted(set(map(str, values))))),
+            )
+            .reset_index()
+            .sort_values(["Araç Plakası", "Kullanım", "Sürücü"], ascending=[True, False, True])
+        )
+        st.dataframe(plate_summary, use_container_width=True, hide_index=True)
+        show_downloads(plate_summary, "plaka_kullanim_ozeti")
+
+    if active_driver_filter:
+        st.markdown("### Personel faaliyet özeti")
+        st.caption("Bu bölüm seçilen ismin belirtilen tarihlerde hangi plakaları kullandığını ve hangi vardiyalarda görev aldığını gösterir.")
+
+        tab_vehicle, tab_shift, tab_day = st.tabs(["Kullandığı plakalar", "Vardiya dağılımı", "Günlük detay"])
+        with tab_vehicle:
+            driver_vehicle_summary = (
+                df.groupby(["Sürücü", "Araç Plakası"], dropna=False)
+                .agg(
+                    Kullanım=("Kayıt ID", "count"),
+                    İlk_Tarih=("Tarih", "min"),
+                    Son_Tarih=("Tarih", "max"),
+                    Vardiyalar=("Vardiya", lambda values: ", ".join(sorted(set(map(str, values))))),
+                )
+                .reset_index()
+                .sort_values(["Sürücü", "Kullanım", "Araç Plakası"], ascending=[True, False, True])
+            )
+            st.dataframe(driver_vehicle_summary, use_container_width=True, hide_index=True)
+            show_downloads(driver_vehicle_summary, "personel_plaka_ozeti")
+
+        with tab_shift:
+            driver_shift_summary = (
+                df.groupby(["Sürücü", "Vardiya"], dropna=False)
+                .agg(
+                    Kayıt=("Kayıt ID", "count"),
+                    Araç_Sayısı=("Araç Plakası", "nunique"),
+                    İlk_Tarih=("Tarih", "min"),
+                    Son_Tarih=("Tarih", "max"),
+                )
+                .reset_index()
+                .sort_values(["Sürücü", "Kayıt", "Vardiya"], ascending=[True, False, True])
+            )
+            st.dataframe(driver_shift_summary, use_container_width=True, hide_index=True)
+            show_downloads(driver_shift_summary, "personel_vardiya_ozeti")
+
+        with tab_day:
+            daily_detail = df[["Tarih", "Sürücü", "Grup", "Vardiya", "Araç Plakası", "Not", "Kayıt ID"]].sort_values(
+                ["Tarih", "Sürücü", "Vardiya"], ascending=[False, True, True]
+            )
+            st.dataframe(daily_detail, use_container_width=True, hide_index=True)
+
     daily = df.groupby("Tarih", as_index=False).size().rename(columns={"size": "Kayıt"})
     shift = df.groupby("Vardiya", as_index=False).size().rename(columns={"size": "Kayıt"}).sort_values("Kayıt", ascending=False)
     group = df.groupby("Grup", as_index=False).size().rename(columns={"size": "Kayıt"}).sort_values("Kayıt", ascending=False)
     vehicles = df.groupby("Araç Plakası", as_index=False).size().rename(columns={"size": "Kullanım"}).sort_values("Kullanım", ascending=False).head(15)
-    drivers = df.groupby("Sürücü", as_index=False).size().rename(columns={"size": "Kayıt"}).sort_values("Kayıt", ascending=False).head(15)
+    drivers_top = df.groupby("Sürücü", as_index=False).size().rename(columns={"size": "Kayıt"}).sort_values("Kayıt", ascending=False).head(15)
 
+    st.markdown("### Grafikler")
     col_a, col_b = st.columns(2)
     with col_a:
         chart_or_info(daily, "line", "Günlük Kayıt Akışı", "Tarih", "Kayıt")
@@ -1879,12 +1992,11 @@ def page_reports() -> None:
         chart_or_info(vehicles, "bar", "En Çok Kullanılan Araçlar", "Araç Plakası", "Kullanım")
 
     st.markdown("### En çok kayıt girilen sürücüler")
-    st.dataframe(drivers, use_container_width=True, hide_index=True)
+    st.dataframe(drivers_top, use_container_width=True, hide_index=True)
 
-    st.markdown("### Rapor verisi")
+    st.markdown("### Filtrelenmiş rapor verisi")
     st.dataframe(df, use_container_width=True, hide_index=True)
-    show_downloads(df, "analiz_raporu")
-
+    show_downloads(df, "analiz_raporu_filtreli")
 
 def page_settings() -> None:
     render_header(

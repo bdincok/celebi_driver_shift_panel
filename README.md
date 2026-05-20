@@ -23,6 +23,14 @@ Klasörü olduğu gibi repo içine koyarsan:
 Main file path: celebi_driver_shift_panel/app.py
 ```
 
+## V7 güncellemesi
+
+- Analiz Raporları ekranına isim arama filtresi eklendi.
+- Analiz Raporları ekranına net plaka seçimi ve plaka içinde arama filtresi eklendi.
+- Belirli tarih aralığında bir plakayı kimlerin kullandığı ayrı özet tabloda gösterilir.
+- Belirli tarih aralığında bir personelin hangi plakaları kullandığı, vardiya dağılımı ve günlük detayları ayrı sekmelerde gösterilir.
+- Tüm bu filtreli raporlar Excel, CSV ve PDF olarak indirilebilir.
+
 ## V6 güncellemesi
 
 - Vardiya girişi artık tek metin alanı değildir; **Giriş Saati** ve **Çıkış Saati** ayrı seçilir.
