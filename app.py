@@ -1,0 +1,1979 @@
+# -*- coding: utf-8 -*-
+"""
+Çelebi Hava Hizmetleri - Sürücü Vardiya ve Araç Yönetim Paneli
+Streamlit + SQLite tek dosya uygulama.
+
+Çalıştırma:
+    pip install -r requirements.txt
+    streamlit run app.py
+"""
+
+from __future__ import annotations
+
+import base64
+import os
+import sqlite3
+from datetime import date, datetime, timedelta
+from io import BytesIO
+from pathlib import Path
+from typing import Iterable, Optional
+
+import pandas as pd
+import streamlit as st
+
+try:
+    import plotly.express as px
+except Exception:  # Plotly yüklenmezse uygulama çalışmaya devam eder.
+    px = None
+
+try:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import cm
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+except Exception:
+    colors = None
+    SimpleDocTemplate = None
+
+
+APP_TITLE = "Çelebi Sürücü Vardiya ve Araç Yönetim Paneli"
+BASE_DIR = Path(__file__).resolve().parent
+DB_DIR = BASE_DIR / "data"
+DB_PATH = DB_DIR / "celebi_driver_panel.sqlite3"
+LOGO_PATH = BASE_DIR / "assets" / "celebi_logo.png"
+
+SEED_VERSION = "2026-05-20-official-driver-groups-v4"
+PLATE_SEED_VERSION = "2026-05-20-official-vehicle-plates-v5"
+APP_BUILD_VERSION = "v6-log-editable-half-hour-shifts"
+
+INITIAL_VEHICLE_PLATES = [
+    "TBTU000074",
+    "TBTU000078",
+    "TBTU000080",
+    "TBTU000094",
+    "TBTU000141",
+    "TBTU000142",
+    "TBTU000143",
+    "TBTU000146",
+    "TBTU000147",
+    "TBTU000149",
+    "TBTU000150",
+    "TBTU000154",
+    "TBTU000155",
+    "TBTU000156",
+    "TBTU000259",
+    "TBTU000260",
+    "TBTU000276",
+    "TBTU000293",
+    "TBTU000294",
+    "TBTU000295",
+    "TBTU000296",
+    "TBTU000297",
+    "TBTU000299",
+    "TBTU000300",
+    "TBTU000301",
+    "TBTU000303",
+    "TBTU000304",
+    "TBTU000305",
+    "TBTU000306",
+    "TBTU000308",
+    "TBTU000309",
+    "TBTU000310",
+    "TBTU000311",
+    "TBTU000312",
+    "TBTU000313",
+    "TBTU000314",
+    "TBTU000315",
+    "TBTU000316",
+    "TBTU000317",
+    "TBTU000320",
+    "TBTU000321",
+    "TBTU000323",
+    "TBTU000331",
+    "TBTU000332",
+    "TBTU000333",
+    "TBTU000334",
+    "TBTU000363",
+    "TBTU000364",
+    "TBTU000365",
+    "TBTU000366",
+    "TBTU000371",
+    "TBTU000381",
+    "TBTU900001",
+]
+
+
+OFFICIAL_DRIVER_GROUPS = [
+    ('A SINIFI', 'A sınıfı sürücü grubunda görev yapan personel.'),
+    ('C SINIFI', 'C sınıfı sürücü grubunda görev yapan personel.'),
+    ('D SINIFI', 'D sınıfı sürücü grubunda görev yapan personel.'),
+    ('KARGO TRAKTÖRÜ', 'Kargo traktörü kullanımı için tanımlı sürücüler.'),
+    ('ŞUT TRAKTÖRÜ', 'Şut traktörü ve bagaj operasyonlarında görev alabilen sürücüler.'),
+    ('RAMP EMNİYET EKİBİ', 'Ramp emniyet ekibinde görevli sürücü personel.'),
+    ('FOLLOW ME', 'Follow Me operasyonunda görev alabilen sürücüler.'),
+    ('TEMIZLIK_TRAKTOR', 'Temizlik traktörü operasyonu için tanımlı sürücüler.'),
+    ('SINIF YÜKSELME EĞİTİMLERİ', 'Sınıf yükselme eğitim sürecinde takip edilen personel.'),
+    ('Tanımlanmamış / Diğer', 'Grubu henüz netleşmeyen veya diğer kategoriye alınan personel.'),
+]
+
+# Eski sürümlerde kullanılan genel grup adları. V4 ilk açılışta kullanılmayanları temizler.
+LEGACY_GROUP_NAMES = [
+    'Genel Sürücüler',
+    'VIP Sürücüleri',
+    'Şut Altı / Bagaj Sürücüleri',
+    'Apron Sürücüleri',
+    'Ağır Vasıta',
+    'Terminal Operasyon',
+    'Uçak Altı Operasyon',
+    'Transfer Sürücüleri',
+    'Gece Operasyon',
+    'Yedek / Takviye Ekip',
+]
+
+# Önceki dosyadaki yazım/split farklarını yeni resmi listeye bağlamak için kullanılır.
+LEGACY_DRIVER_NAME_ALIASES = [
+    ('MAZ_LUM İBRAHİM AKYOL', 'MAZLUM İBRAHİM AKYOL'),
+    ('TOLGA KURU', 'TOLGA KURU HÜSEYİNO'),
+    ('HÜSEYİN OMUSA KESKİN', 'MUSA KESKİN'),
+    ('ÖMER HARUN GÜNEŞ', 'ÖMER HARUNGÜNEŞ'),
+    ('UMUT AYAS', 'UMUT AYAS OKTAY'),
+    ('OKTAY ERDAL', 'ERDAL YILMAZ'),
+    ('YILMAZ YASİN ÇELİK', 'YASİN ÇELİK'),
+]
+
+INITIAL_GROUPS = OFFICIAL_DRIVER_GROUPS
+
+INITIAL_DRIVER_GROUP_ASSIGNMENTS = [
+    ('UMUT BOĞA', 'D SINIFI'),
+    ('MAZLUM İBRAHİM AKYOL', 'KARGO TRAKTÖRÜ'),
+    ('MAHMUT KARADOĞAN', 'D SINIFI'),
+    ('ÖMER ELE', 'D SINIFI'),
+    ('TAYFUN ÜZÜM', 'A SINIFI'),
+    ('MUHAMMET EFE BECİT', 'D SINIFI'),
+    ('KENAN KANDO', 'D SINIFI'),
+    ('İSA CEYLAN', 'D SINIFI'),
+    ('DOĞAN KIŞLA', 'KARGO TRAKTÖRÜ'),
+    ('HEYBET KÖRÜK', 'KARGO TRAKTÖRÜ'),
+    ('GÖKHAN ADALI', 'D SINIFI'),
+    ('VEDAT ÖZBAŞ', 'D SINIFI'),
+    ('HÜSEYİN GÜNER', 'D SINIFI'),
+    ('MAHİR KARABUĞA', 'C SINIFI'),
+    ('EBUBEKİR ŞILTAK', 'D SINIFI'),
+    ('MUSTAFA KAYNAK', 'D SINIFI'),
+    ('BÜLENT DOĞAN', 'A SINIFI'),
+    ('ZAFER ŞİRİN', 'ŞUT TRAKTÖRÜ'),
+    ('BERKANT YILDIZ', 'D SINIFI'),
+    ('VEYSEL TUAÇ', 'D SINIFI'),
+    ('ŞABETTİN KAYA', 'C SINIFI'),
+    ('TOLGAHAN CEYLAN', 'ŞUT TRAKTÖRÜ'),
+    ('AHMET KÖRBALTA', 'D SINIFI'),
+    ('OĞUZHAN ÖKSÜZ', 'A SINIFI'),
+    ('YAVUZ KORKMAZ', 'A SINIFI'),
+    ('İBRAHİM TEKDEMİR', 'C SINIFI'),
+    ('SAMET UMUT KAMSIZ', 'Tanımlanmamış / Diğer'),
+    ('MEHMET BUZ', 'C SINIFI'),
+    ('BİLAL ÇİMEN', 'A SINIFI'),
+    ('MUHARREM EKİN', 'Tanımlanmamış / Diğer'),
+    ('METİN HACIOĞLU', 'A SINIFI'),
+    ('EKREM ÇELİK', 'A SINIFI'),
+    ('MEHMET OLCAY', 'ŞUT TRAKTÖRÜ'),
+    ('AYDIN AKBIYIK', 'RAMP EMNİYET EKİBİ'),
+    ('BAYRAM KAPLAN', 'C SINIFI'),
+    ('FUAT BOZTEPE', 'D SINIFI'),
+    ('FETHİ KAYA', 'C SINIFI'),
+    ('MEHMET ŞİRİN ELİŞ', 'A SINIFI'),
+    ('SERCAN KARAKILIÇ', 'A SINIFI'),
+    ('SEYİTHAN ESATOĞLU', 'A SINIFI'),
+    ('SERDAR ALÇO', 'A SINIFI'),
+    ('CEM KARAKILIÇ', 'D SINIFI'),
+    ('EROL YILMAZ', 'A SINIFI'),
+    ('SEDAT ÇOLAK', 'D SINIFI'),
+    ('CEMAL KARAKAYA', 'A SINIFI'),
+    ('BURAK ÇAKIR', 'D SINIFI'),
+    ('KUBİLAY YILMAZ', 'D SINIFI'),
+    ('HALİL İLKTAŞ', 'RAMP EMNİYET EKİBİ'),
+    ('MEHMET KAYA', 'ŞUT TRAKTÖRÜ'),
+    ('AHMET PETEK', 'C SINIFI'),
+    ('KUBİLAY ANAVATAN', 'D SINIFI'),
+    ('HÜSEYİN ÖZTÜRK', 'ŞUT TRAKTÖRÜ'),
+    ('MÜCAHİT ŞİŞMAN', 'FOLLOW ME'),
+    ('BERKAY ŞAHİN', 'D SINIFI'),
+    ('DURAN KARAKIŞ', 'A SINIFI'),
+    ('ENGİN ÖZGÜL', 'C SINIFI'),
+    ('YUNUS EMRE ERDEM', 'D SINIFI'),
+    ('HÜSEYİN DORUK', 'D SINIFI'),
+    ('YÜCEL DOĞAN', 'C SINIFI'),
+    ('OZAN ALTİNBAŞ', 'C SINIFI'),
+    ('MAHMUT SEYİTOĞLU', 'C SINIFI'),
+    ('TAMER ALÇO', 'FOLLOW ME'),
+    ('FATİH YERLİKAYA', 'D SINIFI'),
+    ('MERT YUMUK', 'D SINIFI'),
+    ('ABDULAZİZ GÜNEY', 'A SINIFI'),
+    ('MEHMET DİNDAR TAYURAK', 'KARGO TRAKTÖRÜ'),
+    ('ALİ YILDIZ', 'A SINIFI'),
+    ('HALİL BÜYÜKARSLAN', 'A SINIFI'),
+    ('CUMA YALÇIN', 'Tanımlanmamış / Diğer'),
+    ('ABDULSELAM ARPACI', 'D SINIFI'),
+    ('MUSA ÖZER', 'D SINIFI'),
+    ('TOLGA KURU HÜSEYİNO', 'A SINIFI'),
+    ('MUSA KESKİN', 'D SINIFI'),
+    ('CİHAN ERGENER', 'A SINIFI'),
+    ('RAMAZAN ÇORAK', 'A SINIFI'),
+    ('EYÜP ALKAÇ', 'ŞUT TRAKTÖRÜ'),
+    ('YEMEN ADAR', 'A SINIFI'),
+    ('HÜRKAAN KAZAN', 'A SINIFI'),
+    ('VEYSEL YILDIZ', 'D SINIFI'),
+    ('OZAN KOLDEMİR', 'D SINIFI'),
+    ('HAŞİM YÜKSEL', 'A SINIFI'),
+    ('BARIŞ TOSUN', 'A SINIFI'),
+    ('METİN ACAR', 'D SINIFI'),
+    ('ENES YÖRENTİ', 'D SINIFI'),
+    ('ÖMER GÜNEŞ', 'Tanımlanmamış / Diğer'),
+    ('KENAN KARATAY', 'D SINIFI'),
+    ('TAMER İLHAN', 'ŞUT TRAKTÖRÜ'),
+    ('MEHMET TÜRK', 'SINIF YÜKSELME EĞİTİMLERİ'),
+    ('YASİN ÇELEBİ', 'D SINIFI'),
+    ('MÜJDAT KAYA', 'ŞUT TRAKTÖRÜ'),
+    ('EMRE KARAKAYA', 'D SINIFI'),
+    ('MEHMET SARAÇ', 'C SINIFI'),
+    ('BEKİR YILMAZ', 'Tanımlanmamış / Diğer'),
+    ('ÖMER HARUNGÜNEŞ', 'D SINIFI'),
+    ('AŞUR COŞAR', 'A SINIFI'),
+    ('EBUBEKİR BAY', 'D SINIFI'),
+    ('ERKAN ŞAHİN', 'C SINIFI'),
+    ('TAYFUN MİLDAN', 'D SINIFI'),
+    ('EMRULLAH ZENGİN', 'TEMIZLIK_TRAKTOR'),
+    ('İSA KESKİN', 'D SINIFI'),
+    ('RÜŞTÜ GÜLEN', 'A SINIFI'),
+    ('DOĞAN TÖNGEL', 'A SINIFI'),
+    ('FATİH ERDİN', 'D SINIFI'),
+    ('MEHMET ŞILTAK', 'D SINIFI'),
+    ('METİN AYDIN', 'A SINIFI'),
+    ('MUHAMMED TURSUN', 'ŞUT TRAKTÖRÜ'),
+    ('İSMAİL AYTEKİN', 'D SINIFI'),
+    ('CİHAN BARA', 'D SINIFI'),
+    ('AHMET IRMAK', 'RAMP EMNİYET EKİBİ'),
+    ('TOLGA ÖCAL', 'C SINIFI'),
+    ('SAİT GÖKMEN', 'A SINIFI'),
+    ('CİHAN SAĞ', 'C SINIFI'),
+    ('UMUT AYAS OKTAY', 'SINIF YÜKSELME EĞİTİMLERİ'),
+    ('ERDAL YILMAZ', 'D SINIFI'),
+    ('YASİN ÇELİK', 'D SINIFI'),
+    ('EMRE MÜDÜROĞLU', 'C SINIFI'),
+    ('SERDAR SEKENDÜR', 'SINIF YÜKSELME EĞİTİMLERİ'),
+    ('MAHMUT KOCAOĞLU', 'A SINIFI'),
+    ('KAMİL BOZTEPE', 'D SINIFI'),
+    ('ORKUN ARAS', 'A SINIFI'),
+    ('ALİ BAYRAM', 'KARGO TRAKTÖRÜ'),
+    ('OSMAN ATAÇ', 'D SINIFI'),
+    ('MESUT ÇAKIR', 'A SINIFI'),
+    ('MESUT DOĞAN KARAGÖZ', 'C SINIFI'),
+    ('HÜSEYİN BEKDEMİR', 'RAMP EMNİYET EKİBİ'),
+    ('AHMET ERAY ÇELİK', 'D SINIFI'),
+    ('YASİN AKKUŞ', 'A SINIFI'),
+    ('RECEP ACAR', 'A SINIFI'),
+    ('SAVAŞ YEŞİL', 'SINIF YÜKSELME EĞİTİMLERİ'),
+    ('CİHAN DAĞKUŞU', 'ŞUT TRAKTÖRÜ'),
+    ('MEHMET SAİT YALMAN', 'D SINIFI'),
+    ('MEVLÜT AYAZ', 'A SINIFI'),
+    ('HABİB BALCİ', 'D SINIFI'),
+    ('TURGAY ARIKAN', 'D SINIFI'),
+    ('BAYRAM EFE', 'RAMP EMNİYET EKİBİ'),
+]
+
+INITIAL_DRIVERS = [name for name, _group in INITIAL_DRIVER_GROUP_ASSIGNMENTS]
+
+DEFAULT_SHIFTS = [
+    "08:00 - 16:00",
+    "16:00 - 00:00",
+    "00:00 - 08:00",
+    "07:00 - 15:00",
+    "09:00 - 17:00",
+    "12:00 - 20:00",
+]
+
+# V6: Vardiya artık serbest metin değil; giriş/çıkış saatleri 30 dakikalık seçeneklerden oluşturulur.
+TIME_OPTIONS = [f"{hour:02d}:{minute:02d}" for hour in range(24) for minute in (0, 30)]
+
+
+def make_shift_label(start_time: str, end_time: str) -> str:
+    return f"{start_time} - {end_time}"
+
+
+def safe_time_index(value: str, fallback: str = "08:00") -> int:
+    value = str(value or "").strip()
+    if value in TIME_OPTIONS:
+        return TIME_OPTIONS.index(value)
+    return TIME_OPTIONS.index(fallback) if fallback in TIME_OPTIONS else 0
+
+
+def parse_shift_label(shift: str) -> tuple[str, str]:
+    clean = " ".join(str(shift or "").strip().split())
+    # Beklenen format: HH:MM - HH:MM
+    if " - " in clean:
+        start, end = clean.split(" - ", 1)
+        start = start.strip()
+        end = end.strip()
+        if start in TIME_OPTIONS and end in TIME_OPTIONS:
+            return start, end
+    return "08:00", "16:00"
+
+
+# -----------------------------
+# Sayfa ayarı
+# -----------------------------
+st.set_page_config(
+    page_title="Çelebi Driver Panel",
+    page_icon="✈️",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+
+# -----------------------------
+# Yardımcı fonksiyonlar
+# -----------------------------
+def normalize_name(value: str) -> str:
+    return " ".join(str(value).strip().upper().split())
+
+
+def normalize_plate(value: str) -> str:
+    return " ".join(str(value).strip().upper().replace("-", "-").split())
+
+
+def connect() -> sqlite3.Connection:
+    DB_DIR.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn.execute("PRAGMA foreign_keys = ON;")
+    return conn
+
+
+def execute(query: str, params: Iterable = ()) -> None:
+    with connect() as conn:
+        conn.execute(query, tuple(params))
+        conn.commit()
+
+
+def executemany(query: str, params: Iterable[Iterable]) -> None:
+    with connect() as conn:
+        conn.executemany(query, params)
+        conn.commit()
+
+
+def read_df(query: str, params: Iterable = ()) -> pd.DataFrame:
+    with connect() as conn:
+        return pd.read_sql_query(query, conn, params=tuple(params))
+
+
+def fetch_one(query: str, params: Iterable = ()):
+    with connect() as conn:
+        return conn.execute(query, tuple(params)).fetchone()
+
+
+def init_db() -> None:
+    with connect() as conn:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS groups (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS drivers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                full_name TEXT NOT NULL UNIQUE,
+                group_id INTEGER NOT NULL,
+                active INTEGER NOT NULL DEFAULT 1,
+                phone TEXT DEFAULT '',
+                notes TEXT DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(group_id) REFERENCES groups(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS shift_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                log_date TEXT NOT NULL,
+                driver_id INTEGER NOT NULL,
+                shift TEXT NOT NULL,
+                plate TEXT NOT NULL,
+                note TEXT DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(driver_id) REFERENCES drivers(id) ON DELETE RESTRICT
+            );
+
+
+            CREATE TABLE IF NOT EXISTS vehicle_plates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                plate TEXT NOT NULL UNIQUE,
+                active INTEGER NOT NULL DEFAULT 1,
+                notes TEXT DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_vehicle_plates_plate ON vehicle_plates(plate);
+            CREATE INDEX IF NOT EXISTS idx_vehicle_plates_active ON vehicle_plates(active);
+
+            CREATE INDEX IF NOT EXISTS idx_shift_logs_date ON shift_logs(log_date);
+            CREATE INDEX IF NOT EXISTS idx_shift_logs_driver ON shift_logs(driver_id);
+            CREATE INDEX IF NOT EXISTS idx_shift_logs_shift ON shift_logs(shift);
+            CREATE INDEX IF NOT EXISTS idx_shift_logs_plate ON shift_logs(plate);
+            """
+        )
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+        )
+
+
+        # Resmi plaka listesi v5 ilk açılışta bir kere yüklenir. Sonradan silinen plaka otomatik geri eklenmez.
+        plate_seed_row = conn.execute(
+            "SELECT value FROM app_settings WHERE key = ?",
+            ("vehicle_plate_seed_version",),
+        ).fetchone()
+        plate_seed_already_applied = bool(plate_seed_row and plate_seed_row[0] == PLATE_SEED_VERSION)
+        if not plate_seed_already_applied:
+            conn.executemany(
+                "INSERT OR IGNORE INTO vehicle_plates (plate, active, notes) VALUES (?, 1, ?)",
+                [(normalize_plate(plate), "Başlangıç resmi plaka listesi") for plate in INITIAL_VEHICLE_PLATES],
+            )
+            conn.execute(
+                """
+                INSERT INTO app_settings (key, value, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+                """,
+                ("vehicle_plate_seed_version", PLATE_SEED_VERSION),
+            )
+
+        # Önceden loglara manuel yazılmış ama master listede olmayan plakalar varsa kaybolmasın diye pasif değil aktif listeye eklenir.
+        existing_log_plates = conn.execute(
+            "SELECT DISTINCT plate FROM shift_logs WHERE plate IS NOT NULL AND TRIM(plate) <> ''"
+        ).fetchall()
+        for (log_plate,) in existing_log_plates:
+            conn.execute(
+                "INSERT OR IGNORE INTO vehicle_plates (plate, active, notes) VALUES (?, 1, ?)",
+                (normalize_plate(log_plate), "Eski vardiya loglarından otomatik aktarıldı"),
+            )
+
+        # Resmi sürücü grupları her açılışta eksikse eklenir; mevcut kayıtlar korunur.
+        conn.executemany(
+            "INSERT OR IGNORE INTO groups (name, description) VALUES (?, ?)",
+            INITIAL_GROUPS,
+        )
+
+        seed_row = conn.execute(
+            "SELECT value FROM app_settings WHERE key = ?",
+            ("driver_group_seed_version",),
+        ).fetchone()
+        seed_already_applied = bool(seed_row and seed_row[0] == SEED_VERSION)
+
+        group_id_by_name = {
+            row[0]: row[1]
+            for row in conn.execute("SELECT name, id FROM groups").fetchall()
+        }
+
+        if not seed_already_applied:
+            # Eski sürümdeki bazı yazım/split farklarını yeni resmi listeye taşı.
+            for old_name, new_name in LEGACY_DRIVER_NAME_ALIASES:
+                old_clean = normalize_name(old_name)
+                new_clean = normalize_name(new_name)
+                old_row = conn.execute("SELECT id FROM drivers WHERE full_name = ?", (old_clean,)).fetchone()
+                new_row = conn.execute("SELECT id FROM drivers WHERE full_name = ?", (new_clean,)).fetchone()
+                if old_row and not new_row:
+                    conn.execute(
+                        "UPDATE drivers SET full_name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (new_clean, old_row[0]),
+                    )
+
+            # Her sürücüyü resmi grubu ile oluştur / ilk migration sırasında gruba taşı.
+            for driver_name, group_name in INITIAL_DRIVER_GROUP_ASSIGNMENTS:
+                clean_name = normalize_name(driver_name)
+                group_id = group_id_by_name[group_name]
+                existing = conn.execute("SELECT id FROM drivers WHERE full_name = ?", (clean_name,)).fetchone()
+                if existing:
+                    conn.execute(
+                        "UPDATE drivers SET group_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (group_id, existing[0]),
+                    )
+                else:
+                    conn.execute(
+                        "INSERT INTO drivers (full_name, group_id, active) VALUES (?, ?, 1)",
+                        (clean_name, group_id),
+                    )
+
+            # Resmi listede olmayan ve hiçbir sürücüye bağlı kalmayan eski genel grupları temizle.
+            official_group_names = {name for name, _desc in INITIAL_GROUPS}
+            for legacy_group_name in LEGACY_GROUP_NAMES:
+                if legacy_group_name in official_group_names:
+                    continue
+                row = conn.execute("SELECT id FROM groups WHERE name = ?", (legacy_group_name,)).fetchone()
+                if not row:
+                    continue
+                usage = conn.execute("SELECT COUNT(*) FROM drivers WHERE group_id = ?", (row[0],)).fetchone()[0]
+                if usage == 0:
+                    conn.execute("DELETE FROM groups WHERE id = ?", (row[0],))
+
+            conn.execute(
+                """
+                INSERT INTO app_settings (key, value, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+                """,
+                ("driver_group_seed_version", SEED_VERSION),
+            )
+        conn.commit()
+
+
+@st.cache_data(show_spinner=False)
+def image_to_base64(path: str) -> str:
+    p = Path(path)
+    if not p.exists():
+        return ""
+    return base64.b64encode(p.read_bytes()).decode("utf-8")
+
+
+def inject_css(theme: str) -> None:
+    dark = theme == "Koyu"
+    palette = {
+        "bg": "#0B0F14" if dark else "#F6F7F9",
+        "surface": "#111827" if dark else "#FFFFFF",
+        "surface2": "#182130" if dark else "#F1F3F6",
+        "text": "#F8FAFC" if dark else "#111111",
+        "muted": "#B6BEC9" if dark else "#555E6B",
+        "border": "#2D3748" if dark else "#E3E6EA",
+        "accent": "#FFFFFF" if dark else "#111111",
+        "accent2": "#9CA3AF" if dark else "#3A3A3A",
+    }
+    primary_button_text = "#111111" if dark else "#FFFFFF"
+
+    st.markdown(
+        f"""
+        <style>
+            :root {{
+                --c-bg: {palette['bg']};
+                --c-surface: {palette['surface']};
+                --c-surface2: {palette['surface2']};
+                --c-text: {palette['text']};
+                --c-muted: {palette['muted']};
+                --c-border: {palette['border']};
+                --c-accent: {palette['accent']};
+                --c-accent2: {palette['accent2']};
+            }}
+            .stApp {{
+                background: radial-gradient(circle at top left, var(--c-surface2) 0, var(--c-bg) 38%, var(--c-bg) 100%);
+                color: var(--c-text);
+            }}
+            [data-testid="stSidebar"] {{
+                background: var(--c-surface);
+                border-right: 1px solid var(--c-border);
+            }}
+            [data-testid="stMetric"] {{
+                background: var(--c-surface);
+                border: 1px solid var(--c-border);
+                padding: 16px;
+                border-radius: 18px;
+                box-shadow: 0 8px 24px rgba(0,0,0,.06);
+            }}
+            .block-container {{
+                padding-top: 1.2rem;
+                padding-bottom: 3rem;
+                max-width: 1450px;
+            }}
+            h1, h2, h3, h4, h5, h6, p, span, div {{
+                font-family: "Inter", "Segoe UI", Arial, sans-serif;
+            }}
+            .hero-card {{
+                background: linear-gradient(135deg, var(--c-surface), var(--c-surface2));
+                border: 1px solid var(--c-border);
+                border-radius: 26px;
+                padding: 26px 28px;
+                margin: 0 0 22px 0;
+                box-shadow: 0 16px 34px rgba(0,0,0,.08);
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 22px;
+            }}
+            .hero-left {{ display: flex; align-items: center; gap: 18px; }}
+            .hero-logo {{
+                width: 124px;
+                max-height: 82px;
+                object-fit: contain;
+                border-radius: 12px;
+                background: #fff;
+                padding: 8px;
+                border: 1px solid var(--c-border);
+            }}
+            .hero-title {{
+                font-size: 28px;
+                font-weight: 800;
+                color: var(--c-text);
+                margin: 0 0 4px 0;
+                letter-spacing: -0.02em;
+            }}
+            .hero-subtitle {{
+                color: var(--c-muted);
+                font-size: 14px;
+                margin: 0;
+            }}
+            .pill {{
+                border: 1px solid var(--c-border);
+                color: var(--c-text);
+                background: var(--c-surface);
+                padding: 8px 12px;
+                border-radius: 999px;
+                font-size: 13px;
+                white-space: nowrap;
+            }}
+            .section-card {{
+                background: var(--c-surface);
+                border: 1px solid var(--c-border);
+                border-radius: 22px;
+                padding: 20px;
+                margin-bottom: 16px;
+                box-shadow: 0 10px 28px rgba(0,0,0,.055);
+            }}
+            .soft-note {{
+                color: var(--c-muted);
+                font-size: 13px;
+                padding: 10px 12px;
+                border-radius: 12px;
+                border: 1px solid var(--c-border);
+                background: var(--c-surface2);
+            }}
+            div[data-testid="stDataFrame"] {{
+                border-radius: 18px;
+                overflow: hidden;
+                border: 1px solid var(--c-border);
+            }}
+            .stButton>button, .stDownloadButton>button {{
+                border-radius: 13px;
+                border: 1px solid var(--c-border);
+                font-weight: 700;
+            }}
+            .stButton>button[kind="primary"] {{
+                background: var(--c-accent);
+                color: {primary_button_text};
+            }}
+
+
+            /* OKUNABİLİRLİK DÜZELTMESİ
+               Streamlit bazı widget yazılarını tema geçişlerinde beyaz bırakabiliyor.
+               Aşağıdaki kurallar tüm label, input, dropdown, sidebar, tab ve tablo başlıklarını
+               seçilen temaya göre okunur hale getirir. */
+            .stApp, .stApp * {{
+                color: var(--c-text);
+            }}
+            [data-testid="stSidebar"], [data-testid="stSidebar"] * {{
+                color: var(--c-text) !important;
+            }}
+            [data-testid="stMarkdownContainer"],
+            [data-testid="stMarkdownContainer"] *,
+            [data-testid="stWidgetLabel"],
+            [data-testid="stWidgetLabel"] *,
+            [data-testid="stCaptionContainer"],
+            [data-testid="stCaptionContainer"] *,
+            label, label *,
+            p, span, small, strong, em,
+            h1, h2, h3, h4, h5, h6 {{
+                color: var(--c-text) !important;
+            }}
+            [data-testid="stCaptionContainer"],
+            .soft-note,
+            .hero-subtitle {{
+                color: var(--c-muted) !important;
+            }}
+            input, textarea,
+            .stTextInput input,
+            .stTextArea textarea,
+            .stNumberInput input,
+            .stDateInput input {{
+                color: var(--c-text) !important;
+                background-color: var(--c-surface) !important;
+                border-color: var(--c-border) !important;
+                caret-color: var(--c-text) !important;
+            }}
+            input::placeholder, textarea::placeholder {{
+                color: var(--c-muted) !important;
+                opacity: 1 !important;
+            }}
+            div[data-baseweb="select"] > div,
+            div[data-baseweb="select"] span,
+            div[data-baseweb="select"] input,
+            div[data-baseweb="select"] svg {{
+                color: var(--c-text) !important;
+                fill: var(--c-text) !important;
+            }}
+            div[data-baseweb="select"] > div {{
+                background-color: var(--c-surface) !important;
+                border-color: var(--c-border) !important;
+            }}
+            div[data-baseweb="popover"],
+            div[data-baseweb="popover"] *,
+            ul[role="listbox"],
+            ul[role="listbox"] *,
+            div[role="listbox"],
+            div[role="listbox"] *,
+            div[role="option"],
+            div[role="option"] * {{
+                color: var(--c-text) !important;
+                background-color: var(--c-surface) !important;
+            }}
+            div[role="option"]:hover,
+            div[role="option"][aria-selected="true"] {{
+                background-color: var(--c-surface2) !important;
+            }}
+            button,
+            button *,
+            .stButton button,
+            .stButton button *,
+            .stDownloadButton button,
+            .stDownloadButton button * {{
+                color: var(--c-text) !important;
+            }}
+            .stButton>button[kind="primary"],
+            .stButton>button[kind="primary"] *,
+            .stFormSubmitButton>button[kind="primary"],
+            .stFormSubmitButton>button[kind="primary"] * {{
+                color: {primary_button_text} !important;
+            }}
+            button[data-baseweb="tab"],
+            button[data-baseweb="tab"] * {{
+                color: var(--c-text) !important;
+            }}
+            [data-testid="stMetric"],
+            [data-testid="stMetric"] *,
+            [data-testid="stMetricLabel"],
+            [data-testid="stMetricValue"],
+            [data-testid="stMetricDelta"] {{
+                color: var(--c-text) !important;
+            }}
+            [data-testid="stExpander"],
+            [data-testid="stExpander"] * {{
+                color: var(--c-text) !important;
+            }}
+            [data-testid="stDataFrame"] *,
+            [data-testid="stTable"] * {{
+                color: var(--c-text) !important;
+            }}
+            .stAlert, .stAlert * {{
+                color: var(--c-text) !important;
+            }}
+
+            @media (max-width: 780px) {{
+                .hero-card {{
+                    flex-direction: column;
+                    align-items: flex-start;
+                    padding: 18px;
+                }}
+                .hero-left {{ flex-direction: column; align-items: flex-start; }}
+                .hero-title {{ font-size: 22px; }}
+                .hero-logo {{ width: 104px; }}
+                .pill {{ white-space: normal; }}
+                .block-container {{ padding-left: 0.9rem; padding-right: 0.9rem; }}
+            }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+def render_header(title: str, subtitle: str) -> None:
+    logo64 = image_to_base64(str(LOGO_PATH))
+    img_html = f'<img class="hero-logo" src="data:image/png;base64,{logo64}" />' if logo64 else ""
+    st.markdown(
+        f"""
+        <div class="hero-card">
+            <div class="hero-left">
+                {img_html}
+                <div>
+                    <div class="hero-title">{title}</div>
+                    <p class="hero-subtitle">{subtitle}</p>
+                </div>
+            </div>
+            <div class="pill">SQLite kayıt sistemi · Streamlit panel · Mobil uyumlu</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def get_groups_df() -> pd.DataFrame:
+    return read_df("SELECT id, name, description FROM groups ORDER BY id")
+
+
+def get_driver_df(include_passive: bool = True) -> pd.DataFrame:
+    where = "" if include_passive else "WHERE d.active = 1"
+    return read_df(
+        f"""
+        SELECT
+            d.id,
+            d.full_name AS 'Sürücü',
+            g.name AS 'Grup',
+            CASE WHEN d.active = 1 THEN 'Aktif' ELSE 'Pasif' END AS 'Durum',
+            d.phone AS 'Telefon',
+            d.notes AS 'Not',
+            d.created_at AS 'Eklenme Zamanı'
+        FROM drivers d
+        LEFT JOIN groups g ON g.id = d.group_id
+        {where}
+        ORDER BY d.active DESC, d.full_name ASC
+        """
+    )
+
+
+def get_driver_options(active_only: bool = True) -> list[dict]:
+    where = "WHERE d.active = 1" if active_only else ""
+    df = read_df(
+        f"""
+        SELECT d.id, d.full_name, d.group_id, g.name AS group_name, d.active
+        FROM drivers d
+        LEFT JOIN groups g ON g.id = d.group_id
+        {where}
+        ORDER BY d.full_name
+        """
+    )
+    return df.to_dict("records")
+
+
+def get_vehicle_df(include_inactive: bool = True) -> pd.DataFrame:
+    where = "" if include_inactive else "WHERE v.active = 1"
+    return read_df(
+        f"""
+        SELECT
+            v.id,
+            v.plate AS 'Plaka',
+            CASE WHEN v.active = 1 THEN 'Aktif' ELSE 'Pasif' END AS 'Durum',
+            COALESCE(logs.log_count, 0) AS 'Log Sayısı',
+            v.notes AS 'Not',
+            v.created_at AS 'Eklenme Zamanı',
+            v.updated_at AS 'Güncelleme Zamanı'
+        FROM vehicle_plates v
+        LEFT JOIN (
+            SELECT plate, COUNT(*) AS log_count
+            FROM shift_logs
+            GROUP BY plate
+        ) logs ON logs.plate = v.plate
+        {where}
+        ORDER BY v.active DESC, v.plate ASC
+        """
+    )
+
+
+def get_plate_options(include_inactive: bool = True, include_log_values: bool = True) -> list[str]:
+    vehicle_where = "" if include_inactive else "WHERE active = 1"
+    if include_log_values:
+        query = f"""
+        SELECT plate FROM vehicle_plates {vehicle_where}
+        UNION
+        SELECT DISTINCT plate
+        FROM shift_logs
+        WHERE plate IS NOT NULL AND TRIM(plate) <> ''
+        ORDER BY plate
+        """
+    else:
+        query = f"""
+        SELECT plate
+        FROM vehicle_plates
+        {vehicle_where}
+        ORDER BY plate
+        """
+    df = read_df(query)
+    if df.empty:
+        return []
+    return [str(p) for p in df["plate"].dropna().tolist()]
+
+
+def upsert_vehicle_plate(plate: str, note: str = "") -> None:
+    clean_plate = normalize_plate(plate)
+    if not clean_plate:
+        return
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO vehicle_plates (plate, active, notes)
+            VALUES (?, 1, ?)
+            ON CONFLICT(plate) DO UPDATE SET active = 1, updated_at = CURRENT_TIMESTAMP
+            """,
+            (clean_plate, note.strip()),
+        )
+        conn.commit()
+
+
+def get_shift_logs(
+    start: Optional[date] = None,
+    end: Optional[date] = None,
+    driver_id: Optional[int] = None,
+    group_id: Optional[int] = None,
+    shift: Optional[str] = None,
+    plate_exact: Optional[str] = None,
+    plate_contains: str = "",
+    include_passive: bool = True,
+) -> pd.DataFrame:
+    clauses = []
+    params: list = []
+    if start:
+        clauses.append("l.log_date >= ?")
+        params.append(start.isoformat())
+    if end:
+        clauses.append("l.log_date <= ?")
+        params.append(end.isoformat())
+    if driver_id:
+        clauses.append("d.id = ?")
+        params.append(driver_id)
+    if group_id:
+        clauses.append("g.id = ?")
+        params.append(group_id)
+    if shift and shift != "Tümü":
+        clauses.append("l.shift = ?")
+        params.append(shift)
+    if plate_exact and plate_exact != "Tümü":
+        clauses.append("l.plate = ?")
+        params.append(normalize_plate(plate_exact))
+    elif plate_contains.strip():
+        clauses.append("UPPER(l.plate) LIKE ?")
+        params.append(f"%{normalize_plate(plate_contains)}%")
+    if not include_passive:
+        clauses.append("d.active = 1")
+
+    where = "WHERE " + " AND ".join(clauses) if clauses else ""
+    return read_df(
+        f"""
+        SELECT
+            l.id AS 'Kayıt ID',
+            l.log_date AS 'Tarih',
+            d.full_name AS 'Sürücü',
+            g.name AS 'Grup',
+            l.shift AS 'Vardiya',
+            l.plate AS 'Araç Plakası',
+            l.note AS 'Not',
+            CASE WHEN d.active = 1 THEN 'Aktif' ELSE 'Pasif' END AS 'Sürücü Durumu',
+            l.created_at AS 'Kayıt Zamanı'
+        FROM shift_logs l
+        JOIN drivers d ON d.id = l.driver_id
+        LEFT JOIN groups g ON g.id = d.group_id
+        {where}
+        ORDER BY l.log_date DESC, l.created_at DESC, d.full_name ASC
+        """,
+        params,
+    )
+
+
+def filter_driver_table(df: pd.DataFrame, search: str, status: str, group: str) -> pd.DataFrame:
+    out = df.copy()
+    if search.strip():
+        mask = out.apply(lambda row: search.upper() in " ".join(map(str, row.values)).upper(), axis=1)
+        out = out[mask]
+    if status != "Tümü":
+        out = out[out["Durum"] == status]
+    if group != "Tümü":
+        out = out[out["Grup"] == group]
+    return out
+
+
+def to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Rapor") -> bytes:
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name=sheet_name[:31])
+        worksheet = writer.sheets[sheet_name[:31]]
+        for column_cells in worksheet.columns:
+            length = max(len(str(cell.value)) if cell.value is not None else 0 for cell in column_cells)
+            worksheet.column_dimensions[column_cells[0].column_letter].width = min(max(length + 2, 12), 42)
+    return output.getvalue()
+
+
+def to_csv_bytes(df: pd.DataFrame) -> bytes:
+    return df.to_csv(index=False).encode("utf-8-sig")
+
+
+def try_register_pdf_font() -> str:
+    if SimpleDocTemplate is None:
+        return "Helvetica"
+    candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        str(BASE_DIR / "assets" / "DejaVuSans.ttf"),
+    ]
+    for font_path in candidates:
+        if os.path.exists(font_path):
+            try:
+                pdfmetrics.registerFont(TTFont("LocalSans", font_path))
+                return "LocalSans"
+            except Exception:
+                continue
+    return "Helvetica"
+
+
+def to_pdf_bytes(df: pd.DataFrame, title: str) -> bytes:
+    if SimpleDocTemplate is None:
+        raise RuntimeError("PDF çıktısı için reportlab paketinin kurulu olması gerekir.")
+
+    output = BytesIO()
+    font_name = try_register_pdf_font()
+    doc = SimpleDocTemplate(
+        output,
+        pagesize=landscape(A4),
+        leftMargin=1.0 * cm,
+        rightMargin=1.0 * cm,
+        topMargin=1.0 * cm,
+        bottomMargin=1.0 * cm,
+    )
+    styles = getSampleStyleSheet()
+    styles["Title"].fontName = font_name
+    styles["Normal"].fontName = font_name
+
+    display_df = df.head(500).copy()
+    for col in display_df.columns:
+        display_df[col] = display_df[col].astype(str).str.slice(0, 55)
+
+    table_data = [display_df.columns.tolist()] + display_df.values.tolist()
+    table = Table(table_data, repeatRows=1)
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#111111")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, -1), font_name),
+                ("FONTSIZE", (0, 0), (-1, -1), 7),
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#D9D9D9")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F5F5F5")]),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]
+        )
+    )
+    story = [
+        Paragraph(title, styles["Title"]),
+        Paragraph(f"Oluşturulma zamanı: {datetime.now().strftime('%d.%m.%Y %H:%M')}", styles["Normal"]),
+        Paragraph(f"Toplam kayıt: {len(df)} | PDF'te ilk {len(display_df)} kayıt gösterilir.", styles["Normal"]),
+        Spacer(1, 0.35 * cm),
+        table,
+    ]
+    doc.build(story)
+    return output.getvalue()
+
+
+def show_downloads(df: pd.DataFrame, prefix: str) -> None:
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.download_button(
+            "Excel indir (.xlsx)",
+            data=to_excel_bytes(df, "Rapor"),
+            file_name=f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+    with c2:
+        st.download_button(
+            "CSV indir",
+            data=to_csv_bytes(df),
+            file_name=f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+    with c3:
+        if SimpleDocTemplate is None:
+            st.button("PDF için reportlab gerekli", disabled=True, use_container_width=True)
+        else:
+            st.download_button(
+                "PDF indir",
+                data=to_pdf_bytes(df, "Çelebi Vardiya ve Araç Raporu"),
+                file_name=f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
+
+
+def sidebar_logo() -> None:
+    if LOGO_PATH.exists():
+        st.sidebar.image(str(LOGO_PATH), use_container_width=True)
+    st.sidebar.markdown("---")
+
+
+def chart_or_info(df: pd.DataFrame, chart_type: str, title: str, x: str, y: str | None = None):
+    if df.empty:
+        st.info("Bu grafik için yeterli kayıt yok.")
+        return
+    if px is None:
+        if y and x in df and y in df:
+            st.bar_chart(df.set_index(x)[y])
+        else:
+            st.dataframe(df, use_container_width=True)
+        return
+    if chart_type == "bar":
+        fig = px.bar(df, x=x, y=y, title=title, text_auto=True)
+    elif chart_type == "line":
+        fig = px.line(df, x=x, y=y, title=title, markers=True)
+    else:
+        fig = px.pie(df, names=x, values=y, title=title)
+    fig.update_layout(margin=dict(l=10, r=10, t=55, b=10), height=390)
+    st.plotly_chart(fig, use_container_width=True)
+
+
+# -----------------------------
+# Sayfalar
+# -----------------------------
+def page_dashboard() -> None:
+    render_header(
+        "Operasyon Ana Sayfası",
+        "Günlük sürücü-vardiya-plaka kayıtlarını tek ekrandan takip et.",
+    )
+
+    today = date.today().isoformat()
+    total_driver = fetch_one("SELECT COUNT(*) FROM drivers")[0]
+    active_driver = fetch_one("SELECT COUNT(*) FROM drivers WHERE active = 1")[0]
+    today_logs = fetch_one("SELECT COUNT(*) FROM shift_logs WHERE log_date = ?", (today,))[0]
+    unique_vehicles = fetch_one("SELECT COUNT(DISTINCT plate) FROM shift_logs")[0]
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Toplam Sürücü", total_driver)
+    c2.metric("Aktif Sürücü", active_driver)
+    c3.metric("Bugünkü Kayıt", today_logs)
+    c4.metric("Kayıtlı Araç Plakası", unique_vehicles or 0)
+
+    st.markdown("### Bugünkü Operasyon")
+    today_df = get_shift_logs(date.today(), date.today())
+    if today_df.empty:
+        st.info("Bugün için henüz vardiya/plaka kaydı girilmedi.")
+    else:
+        st.dataframe(today_df, use_container_width=True, hide_index=True)
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        shift_counts = read_df(
+            """
+            SELECT shift AS Vardiya, COUNT(*) AS Kayıt
+            FROM shift_logs
+            WHERE log_date >= ?
+            GROUP BY shift
+            ORDER BY Kayıt DESC
+            """,
+            ((date.today() - timedelta(days=30)).isoformat(),),
+        )
+        chart_or_info(shift_counts, "bar", "Son 30 Gün Vardiya Dağılımı", "Vardiya", "Kayıt")
+    with col_b:
+        group_counts = read_df(
+            """
+            SELECT g.name AS Grup, COUNT(*) AS Kayıt
+            FROM shift_logs l
+            JOIN drivers d ON d.id = l.driver_id
+            JOIN groups g ON g.id = d.group_id
+            WHERE l.log_date >= ?
+            GROUP BY g.name
+            ORDER BY Kayıt DESC
+            """,
+            ((date.today() - timedelta(days=30)).isoformat(),),
+        )
+        chart_or_info(group_counts, "pie", "Son 30 Gün Grup Dağılımı", "Grup", "Kayıt")
+
+    st.markdown("### Hızlı Kontrol")
+    st.markdown(
+        """
+        <div class="soft-note">
+        Bu panel şu an manuel veri girişine göre çalışır. Streamlit Cloud üzerinde veri kalıcılığı sınırlı olabilir; gerçek operasyon kullanımı için sonraki adımda PostgreSQL/Supabase entegrasyonu önerilir.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def page_driver_management() -> None:
+    render_header(
+        "Sürücü Yönetimi",
+        "Sürücü ekle, grup değiştir, pasife al veya geçmişi bozmadan personel listesini yönet.",
+    )
+
+    groups = get_groups_df()
+    drivers = get_driver_df(include_passive=True)
+    group_names = ["Tümü"] + groups["name"].tolist()
+
+    tab_list, tab_add, tab_edit, tab_quick_group, tab_groups = st.tabs(
+        ["Liste", "Yeni Sürücü Ekle", "Düzenle / Pasif-Sil", "Hızlı Grup Değiştir", "Grup Yönetimi"]
+    )
+
+    with tab_list:
+        f1, f2, f3 = st.columns([2, 1, 1])
+        search = f1.text_input("Sürücü, plaka, not veya grup içinde ara", key="driver_search")
+        status = f2.selectbox("Durum", ["Tümü", "Aktif", "Pasif"], key="driver_status")
+        group_filter = f3.selectbox("Grup", group_names, key="driver_group_filter")
+        filtered = filter_driver_table(drivers, search, status, group_filter)
+
+        st.caption(f"Gösterilen sürücü: {len(filtered)} / {len(drivers)}")
+        st.dataframe(filtered, use_container_width=True, hide_index=True)
+        show_downloads(filtered, "surucu_listesi")
+
+    with tab_add:
+        with st.form("add_driver_form", clear_on_submit=True):
+            st.subheader("Yeni sürücü ekle")
+            name = st.text_input("Ad Soyad", placeholder="Örn: AHMET YILMAZ")
+            c1, c2 = st.columns(2)
+            group_name = c1.selectbox("Personel Grubu", groups["name"].tolist())
+            phone = c2.text_input("Telefon / Dahili (opsiyonel)")
+            notes = st.text_area("Not (opsiyonel)")
+            submitted = st.form_submit_button("Sürücüyü ekle", type="primary", use_container_width=True)
+
+        if submitted:
+            clean_name = normalize_name(name)
+            if not clean_name:
+                st.error("Ad Soyad boş bırakılamaz.")
+            elif fetch_one("SELECT id FROM drivers WHERE full_name = ?", (clean_name,)):
+                st.warning("Bu isimde bir sürücü zaten kayıtlı.")
+            else:
+                group_id = int(groups.loc[groups["name"] == group_name, "id"].iloc[0])
+                execute(
+                    "INSERT INTO drivers (full_name, group_id, active, phone, notes) VALUES (?, ?, 1, ?, ?)",
+                    (clean_name, group_id, phone.strip(), notes.strip()),
+                )
+                st.success(f"{clean_name} sisteme eklendi.")
+                st.rerun()
+
+    with tab_edit:
+        st.subheader("Sürücü bilgisi güncelle")
+        options = get_driver_options(active_only=False)
+        if not options:
+            st.info("Henüz sürücü yok.")
+        else:
+            label_map = {
+                f"{row['full_name']} · {row['group_name']} · {'Aktif' if row['active'] else 'Pasif'}": row
+                for row in options
+            }
+            selected_label = st.selectbox("Sürücü seç", list(label_map.keys()))
+            selected = label_map[selected_label]
+            current = read_df("SELECT * FROM drivers WHERE id = ?", (selected["id"],)).iloc[0]
+
+            with st.form("edit_driver_form"):
+                new_name = st.text_input("Ad Soyad", value=current["full_name"])
+                c1, c2, c3 = st.columns(3)
+                group_names_only = groups["name"].tolist()
+                current_group_name = read_df("SELECT name FROM groups WHERE id = ?", (int(current["group_id"]),)).iloc[0, 0]
+                new_group = c1.selectbox(
+                    "Grup",
+                    group_names_only,
+                    index=group_names_only.index(current_group_name),
+                )
+                new_status = c2.selectbox("Durum", ["Aktif", "Pasif"], index=0 if int(current["active"]) else 1)
+                new_phone = c3.text_input("Telefon", value=current["phone"] or "")
+                new_notes = st.text_area("Not", value=current["notes"] or "")
+                save_update = st.form_submit_button("Değişiklikleri kaydet", type="primary", use_container_width=True)
+
+            if save_update:
+                clean_name = normalize_name(new_name)
+                duplicate = fetch_one(
+                    "SELECT id FROM drivers WHERE full_name = ? AND id <> ?",
+                    (clean_name, int(current["id"])),
+                )
+                if not clean_name:
+                    st.error("Ad Soyad boş bırakılamaz.")
+                elif duplicate:
+                    st.error("Bu isim başka bir sürücüde kayıtlı.")
+                else:
+                    new_group_id = int(groups.loc[groups["name"] == new_group, "id"].iloc[0])
+                    execute(
+                        """
+                        UPDATE drivers
+                        SET full_name = ?, group_id = ?, active = ?, phone = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (clean_name, new_group_id, 1 if new_status == "Aktif" else 0, new_phone.strip(), new_notes.strip(), int(current["id"])),
+                    )
+                    st.success("Sürücü bilgisi güncellendi.")
+                    st.rerun()
+
+            st.markdown("---")
+            st.subheader("Pasife alma / kalıcı silme")
+            log_count = fetch_one("SELECT COUNT(*) FROM shift_logs WHERE driver_id = ?", (int(current["id"]),))[0]
+            st.caption(f"Bu sürücüye bağlı geçmiş kayıt sayısı: {log_count}")
+
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("Sürücüyü pasife al", use_container_width=True):
+                    execute("UPDATE drivers SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (int(current["id"]),))
+                    st.success("Sürücü pasife alındı. Geçmiş kayıtlar korunur.")
+                    st.rerun()
+            with c2:
+                confirm_delete = st.checkbox("Kalıcı silmeyi onaylıyorum", key="confirm_driver_delete")
+                if st.button("Kalıcı sil", disabled=(not confirm_delete or log_count > 0), use_container_width=True):
+                    execute("DELETE FROM drivers WHERE id = ?", (int(current["id"]),))
+                    st.success("Sürücü kalıcı olarak silindi.")
+                    st.rerun()
+                if log_count > 0:
+                    st.caption("Geçmiş kaydı olan sürücü kalıcı silinemez; pasife alınmalıdır.")
+
+
+    with tab_quick_group:
+        st.subheader("Sonradan grubu değişen personel için hızlı alan")
+        st.caption("Personelin adı değişmeden sadece bağlı olduğu sürücü grubunu buradan güncelleyebilirsin. Geçmiş loglar bozulmaz; sadece personelin güncel grubu değişir.")
+
+        options = get_driver_options(active_only=False)
+        if not options:
+            st.info("Henüz sürücü yok.")
+        else:
+            label_map = {
+                f"{row['full_name']} · Mevcut grup: {row['group_name']} · {'Aktif' if row['active'] else 'Pasif'}": row
+                for row in options
+            }
+            selected_quick_label = st.selectbox("Grubu değişecek sürücü", list(label_map.keys()), key="quick_group_driver")
+            selected_quick = label_map[selected_quick_label]
+            group_names_only = groups["name"].tolist()
+            current_group_name = selected_quick.get("group_name") or group_names_only[0]
+            current_index = group_names_only.index(current_group_name) if current_group_name in group_names_only else 0
+
+            q1, q2 = st.columns([1, 1])
+            q1.text_input("Mevcut grup", value=current_group_name, disabled=True)
+            new_quick_group = q2.selectbox(
+                "Yeni grup",
+                group_names_only,
+                index=current_index,
+                key="quick_new_group",
+            )
+            change_note = st.text_input(
+                "Değişiklik notu (opsiyonel)",
+                placeholder="Örn: Eğitim tamamlandı, A sınıfına geçti",
+                key="quick_group_note",
+            )
+
+            if st.button("Seçili sürücünün grubunu güncelle", type="primary", use_container_width=True):
+                new_group_id = int(groups.loc[groups["name"] == new_quick_group, "id"].iloc[0])
+                if new_quick_group == current_group_name:
+                    st.info("Seçilen sürücü zaten bu grupta.")
+                else:
+                    if change_note.strip():
+                        note_text = f"Grup değişikliği: {current_group_name} -> {new_quick_group}. {change_note.strip()}"
+                        execute(
+                            """
+                            UPDATE drivers
+                            SET group_id = ?,
+                                notes = TRIM(COALESCE(NULLIF(notes, ''), '') || CASE WHEN COALESCE(NULLIF(notes, ''), '') = '' THEN '' ELSE ' | ' END || ?),
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE id = ?
+                            """,
+                            (new_group_id, note_text, int(selected_quick["id"])),
+                        )
+                    else:
+                        execute(
+                            "UPDATE drivers SET group_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                            (new_group_id, int(selected_quick["id"])),
+                        )
+                    st.success(f"{selected_quick['full_name']} yeni gruba taşındı: {new_quick_group}")
+                    st.rerun()
+
+            st.markdown("---")
+            st.subheader("Toplu grup değiştirme")
+            st.caption("Aynı anda birden fazla sürücüyü aynı gruba almak için kullanılır.")
+            bulk_group = st.selectbox("Toplu atanacak grup", group_names_only, key="bulk_group_target")
+            bulk_labels = list(label_map.keys())
+            selected_bulk_labels = st.multiselect("Sürücüleri seç", bulk_labels, key="bulk_group_drivers")
+            if st.button("Seçili sürücüleri toplu güncelle", disabled=not selected_bulk_labels, use_container_width=True):
+                bulk_group_id = int(groups.loc[groups["name"] == bulk_group, "id"].iloc[0])
+                selected_ids = [int(label_map[label]["id"]) for label in selected_bulk_labels]
+                executemany(
+                    "UPDATE drivers SET group_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    [(bulk_group_id, driver_id) for driver_id in selected_ids],
+                )
+                st.success(f"{len(selected_ids)} sürücünün grubu {bulk_group} olarak güncellendi.")
+                st.rerun()
+
+    with tab_groups:
+        st.subheader("10 Resmi Grup Tanımı")
+        st.caption("Bu gruplar yüklediğin resmi sürücü/grup listesine göre başlangıçta otomatik tanımlanır. İsim/açıklama değişikliklerini buradan yapabilirsin.")
+        st.dataframe(groups, use_container_width=True, hide_index=True)
+
+        group_label_map = {f"{row['id']} · {row['name']}": row for _, row in groups.iterrows()}
+        selected_group_label = st.selectbox("Düzenlenecek grup", list(group_label_map.keys()))
+        selected_group = group_label_map[selected_group_label]
+
+        with st.form("group_edit_form"):
+            new_group_name = st.text_input("Grup adı", value=selected_group["name"])
+            new_desc = st.text_area("Açıklama", value=selected_group["description"] or "")
+            save_group = st.form_submit_button("Grubu güncelle", type="primary", use_container_width=True)
+
+        if save_group:
+            clean_group = " ".join(new_group_name.strip().split())
+            if not clean_group:
+                st.error("Grup adı boş bırakılamaz.")
+            else:
+                duplicate = fetch_one(
+                    "SELECT id FROM groups WHERE name = ? AND id <> ?",
+                    (clean_group, int(selected_group["id"])),
+                )
+                if duplicate:
+                    st.error("Bu grup adı zaten kullanılıyor.")
+                else:
+                    execute(
+                        "UPDATE groups SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (clean_group, new_desc.strip(), int(selected_group["id"])),
+                    )
+                    st.success("Grup güncellendi.")
+                    st.rerun()
+
+
+def page_vehicle_management() -> None:
+    render_header(
+        "Plaka Yönetimi",
+        "Resmi araç plakalarını ekle, düzelt, pasife al veya hatalı girilen plakaları güvenli şekilde sil.",
+    )
+
+    vehicles = get_vehicle_df(include_inactive=True)
+    tab_list, tab_add, tab_edit, tab_bulk = st.tabs(
+        ["Liste", "Yeni Plaka Ekle", "Düzenle / Pasif-Sil", "Toplu Plaka Yükle"]
+    )
+
+    with tab_list:
+        f1, f2 = st.columns([2, 1])
+        search = f1.text_input("Plaka içinde ara", placeholder="Örn: TBTU0003", key="vehicle_search")
+        status = f2.selectbox("Durum", ["Tümü", "Aktif", "Pasif"], key="vehicle_status_filter")
+        filtered = vehicles.copy()
+        if search.strip():
+            filtered = filtered[filtered["Plaka"].astype(str).str.upper().str.contains(search.upper().strip(), na=False)]
+        if status != "Tümü":
+            filtered = filtered[filtered["Durum"] == status]
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Toplam Plaka", len(vehicles))
+        c2.metric("Aktif Plaka", int((vehicles["Durum"] == "Aktif").sum()) if not vehicles.empty else 0)
+        c3.metric("Filtrelenen", len(filtered))
+
+        st.dataframe(filtered, use_container_width=True, hide_index=True)
+        if not filtered.empty:
+            show_downloads(filtered, "plaka_listesi")
+
+    with tab_add:
+        st.subheader("Yeni plaka ekle")
+        with st.form("add_vehicle_form", clear_on_submit=True):
+            new_plate = st.text_input("Plaka", placeholder="Örn: TBTU000999")
+            new_note = st.text_area("Not (opsiyonel)", placeholder="Örn: Yeni araç, yedek araç")
+            submitted = st.form_submit_button("Plakayı ekle", type="primary", use_container_width=True)
+
+        if submitted:
+            clean_plate = normalize_plate(new_plate)
+            if not clean_plate:
+                st.error("Plaka boş bırakılamaz.")
+            elif fetch_one("SELECT id FROM vehicle_plates WHERE plate = ?", (clean_plate,)):
+                st.warning("Bu plaka zaten kayıtlı.")
+            else:
+                execute(
+                    "INSERT INTO vehicle_plates (plate, active, notes) VALUES (?, 1, ?)",
+                    (clean_plate, new_note.strip()),
+                )
+                st.success(f"{clean_plate} plaka listesine eklendi.")
+                st.rerun()
+
+    with tab_edit:
+        st.subheader("Plaka düzeltme / pasife alma / silme")
+        raw_vehicles = read_df("SELECT id, plate, active, notes FROM vehicle_plates ORDER BY active DESC, plate ASC")
+        if raw_vehicles.empty:
+            st.info("Henüz kayıtlı plaka yok.")
+        else:
+            label_map = {
+                f"{row['plate']} · {'Aktif' if int(row['active']) else 'Pasif'}": row
+                for _, row in raw_vehicles.iterrows()
+            }
+            selected_label = st.selectbox("Düzenlenecek plaka", list(label_map.keys()), key="vehicle_edit_select")
+            selected = label_map[selected_label]
+            old_plate = str(selected["plate"])
+            log_count = int(fetch_one("SELECT COUNT(*) FROM shift_logs WHERE plate = ?", (old_plate,))[0])
+            st.caption(f"Bu plakaya bağlı geçmiş log sayısı: {log_count}")
+
+            with st.form("edit_vehicle_form"):
+                c1, c2 = st.columns(2)
+                edited_plate = c1.text_input("Plaka", value=old_plate)
+                edited_status = c2.selectbox("Durum", ["Aktif", "Pasif"], index=0 if int(selected["active"]) else 1)
+                edited_note = st.text_area("Not", value=selected["notes"] or "")
+                sync_logs = st.checkbox(
+                    "Plaka adı değişirse geçmiş loglardaki eski plakayı da yeni plakaya çevir",
+                    value=True,
+                    help="Yanlış yazılmış plaka düzeltmelerinde bunu açık bırak. Böylece filtrelerde eski hatalı plaka kalmaz.",
+                )
+                save_vehicle = st.form_submit_button("Plaka bilgisini güncelle", type="primary", use_container_width=True)
+
+            if save_vehicle:
+                clean_new_plate = normalize_plate(edited_plate)
+                if not clean_new_plate:
+                    st.error("Plaka boş bırakılamaz.")
+                else:
+                    duplicate = fetch_one(
+                        "SELECT id FROM vehicle_plates WHERE plate = ? AND id <> ?",
+                        (clean_new_plate, int(selected["id"])),
+                    )
+                    if duplicate:
+                        st.error("Bu plaka başka bir kayıtta zaten var.")
+                    else:
+                        with connect() as conn:
+                            conn.execute(
+                                """
+                                UPDATE vehicle_plates
+                                SET plate = ?, active = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+                                WHERE id = ?
+                                """,
+                                (clean_new_plate, 1 if edited_status == "Aktif" else 0, edited_note.strip(), int(selected["id"])),
+                            )
+                            if sync_logs and clean_new_plate != old_plate:
+                                conn.execute(
+                                    "UPDATE shift_logs SET plate = ?, updated_at = CURRENT_TIMESTAMP WHERE plate = ?",
+                                    (clean_new_plate, old_plate),
+                                )
+                            conn.commit()
+                        st.success("Plaka bilgisi güncellendi.")
+                        st.rerun()
+
+            st.markdown("---")
+            st.subheader("Kalıcı silme")
+            st.caption("Geçmiş logu olan plaka kalıcı silinemez. Önce yukarıdan doğru plakaya çevir veya plakayı pasife al.")
+            confirm_delete = st.checkbox("Bu plakayı kalıcı silmeyi onaylıyorum", key="confirm_vehicle_delete")
+            if st.button("Seçili plakayı kalıcı sil", disabled=(not confirm_delete or log_count > 0), use_container_width=True):
+                execute("DELETE FROM vehicle_plates WHERE id = ?", (int(selected["id"]),))
+                st.success("Plaka kalıcı olarak silindi.")
+                st.rerun()
+            if log_count > 0:
+                st.info("Bu plakaya bağlı geçmiş kayıt var. Kayıt geçmişini bozmamak için silme yerine düzeltme veya pasife alma kullan.")
+
+    with tab_bulk:
+        st.subheader("Toplu plaka yükle")
+        st.caption("Her satıra bir plaka yazabilir veya virgülle ayırabilirsin. Var olan plakalar tekrar eklenmez.")
+        sample_text = "\n".join(INITIAL_VEHICLE_PLATES[:8])
+        bulk_text = st.text_area("Plaka listesi", value="", placeholder=sample_text, height=220)
+        bulk_note = st.text_input("Toplu yükleme notu", value="Manuel toplu yükleme")
+        if st.button("Toplu plakaları ekle", type="primary", use_container_width=True):
+            raw_items = []
+            for chunk in bulk_text.replace(",", "\n").splitlines():
+                clean = normalize_plate(chunk)
+                if clean:
+                    raw_items.append(clean)
+            unique_items = sorted(set(raw_items))
+            if not unique_items:
+                st.warning("Eklenecek plaka bulunamadı.")
+            else:
+                before = int(fetch_one("SELECT COUNT(*) FROM vehicle_plates")[0])
+                executemany(
+                    "INSERT OR IGNORE INTO vehicle_plates (plate, active, notes) VALUES (?, 1, ?)",
+                    [(plate, bulk_note.strip()) for plate in unique_items],
+                )
+                after = int(fetch_one("SELECT COUNT(*) FROM vehicle_plates")[0])
+                st.success(f"{after - before} yeni plaka eklendi. Zaten kayıtlı/tekrar olan: {len(unique_items) - (after - before)}")
+                st.rerun()
+
+
+def page_shift_entry() -> None:
+    render_header(
+        "Canlı Vardiya ve Araç Girişi",
+        "Amirler günlük operasyon için sürücü, giriş-çıkış saati ve plaka eşleşmesini buradan işler.",
+    )
+
+    drivers = get_driver_options(active_only=True)
+    if not drivers:
+        st.warning("Aktif sürücü bulunamadı. Önce Sürücü Yönetimi sayfasından sürücü ekleyin veya aktife alın.")
+        return
+
+    st.markdown("### Tekil kayıt girişi")
+    st.caption("Vardiya artık iki ayrı alanla girilir: giriş saati ve çıkış saati. Saat seçenekleri 30 dakika aralıklıdır.")
+    with st.form("single_log_form", clear_on_submit=True):
+        c1, c2, c3, c4 = st.columns([1, 1, 1, 2])
+        log_date = c1.date_input("Tarih", value=date.today(), format="DD.MM.YYYY")
+        entry_time = c2.selectbox("Giriş Saati", TIME_OPTIONS, index=safe_time_index("08:00"))
+        exit_time = c3.selectbox("Çıkış Saati", TIME_OPTIONS, index=safe_time_index("16:00"))
+
+        driver_labels = [f"{d['full_name']} · {d['group_name']}" for d in drivers]
+        driver_lookup = {f"{d['full_name']} · {d['group_name']}": d for d in drivers}
+        selected_driver_label = c4.selectbox("Sürücü seçimi", driver_labels)
+
+        c5, c6 = st.columns([1, 2])
+        active_plate_options = get_plate_options(include_inactive=False, include_log_values=False)
+        manual_choice = "Listede yok / manuel gir"
+        plate_choice = c5.selectbox("Araç plakası", [""] + active_plate_options + [manual_choice])
+        manual_plate = ""
+        add_manual_to_master = False
+        if plate_choice == manual_choice:
+            manual_plate = c5.text_input("Manuel plaka", placeholder="Örn: TBTU000999")
+            add_manual_to_master = c5.checkbox("Bu plakayı plaka listesine de ekle", value=True)
+        plate = manual_plate if plate_choice == manual_choice else plate_choice
+        note = c6.text_input("Not (opsiyonel)", placeholder="Örn: VIP görev, bagaj transferi")
+        submitted = st.form_submit_button("Vardiya kaydını ekle", type="primary", use_container_width=True)
+
+    if submitted:
+        selected_driver = driver_lookup[selected_driver_label]
+        clean_plate = normalize_plate(plate)
+        clean_shift = make_shift_label(entry_time, exit_time)
+        if not clean_plate:
+            st.error("Araç plakası boş bırakılamaz.")
+        else:
+            if plate_choice == manual_choice and add_manual_to_master:
+                upsert_vehicle_plate(clean_plate, "Vardiya girişinden otomatik eklendi")
+            execute(
+                "INSERT INTO shift_logs (log_date, driver_id, shift, plate, note) VALUES (?, ?, ?, ?, ?)",
+                (log_date.isoformat(), int(selected_driver["id"]), clean_shift, clean_plate, note.strip()),
+            )
+            st.success("Vardiya ve araç kaydı eklendi.")
+            st.rerun()
+
+    st.markdown("---")
+    st.markdown("### Toplu kayıt girişi")
+    st.caption("Aynı tarih için birden fazla sürücü kaydını hızlı girmek için tabloyu doldur. Giriş ve çıkış saatleri 30 dakika aralıklı seçilir.")
+
+    driver_name_options = [d["full_name"] for d in drivers]
+    active_plate_options_for_batch = get_plate_options(include_inactive=False, include_log_values=False)
+    batch_date = st.date_input("Toplu kayıt tarihi", value=date.today(), format="DD.MM.YYYY", key="batch_date")
+    initial_batch = pd.DataFrame(
+        [{"Sürücü": "", "Giriş Saati": "08:00", "Çıkış Saati": "16:00", "Araç Plakası": "", "Not": ""} for _ in range(5)]
+    )
+    edited = st.data_editor(
+        initial_batch,
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Sürücü": st.column_config.SelectboxColumn("Sürücü", options=[""] + driver_name_options, required=False),
+            "Giriş Saati": st.column_config.SelectboxColumn("Giriş Saati", options=TIME_OPTIONS, required=False),
+            "Çıkış Saati": st.column_config.SelectboxColumn("Çıkış Saati", options=TIME_OPTIONS, required=False),
+            "Araç Plakası": st.column_config.SelectboxColumn(
+                "Araç Plakası",
+                options=[""] + active_plate_options_for_batch,
+                required=False,
+                help="Plaka listede yoksa Plaka Yönetimi sayfasından ekleyebilir veya tekil girişte manuel yazabilirsin.",
+            ),
+            "Not": st.column_config.TextColumn("Not"),
+        },
+        key="batch_editor",
+    )
+    if st.button("Toplu kayıtları kaydet", type="primary", use_container_width=True):
+        driver_id_by_name = {d["full_name"]: int(d["id"]) for d in drivers}
+        rows_to_insert = []
+        skipped = 0
+        for _, row in edited.iterrows():
+            dname = str(row.get("Sürücü", "")).strip()
+            entry = str(row.get("Giriş Saati", "")).strip()
+            exit_ = str(row.get("Çıkış Saati", "")).strip()
+            pl = normalize_plate(row.get("Araç Plakası", ""))
+            nt = str(row.get("Not", "")).strip()
+            if not dname and not entry and not exit_ and not pl:
+                continue
+            if dname in driver_id_by_name and entry in TIME_OPTIONS and exit_ in TIME_OPTIONS and pl:
+                rows_to_insert.append((batch_date.isoformat(), driver_id_by_name[dname], make_shift_label(entry, exit_), pl, nt))
+            else:
+                skipped += 1
+        if rows_to_insert:
+            # Toplu girişte seçilen plaka master listeden gelir. Yine de güvenlik için eksikse master listeye eklenir.
+            for _date, _driver_id, _shift, inserted_plate, _note in rows_to_insert:
+                upsert_vehicle_plate(inserted_plate, "Toplu vardiya girişinden otomatik eklendi")
+            executemany(
+                "INSERT INTO shift_logs (log_date, driver_id, shift, plate, note) VALUES (?, ?, ?, ?, ?)",
+                rows_to_insert,
+            )
+            st.success(f"{len(rows_to_insert)} kayıt eklendi. Eksik olduğu için atlanan satır: {skipped}")
+            st.rerun()
+        else:
+            st.warning("Kaydedilecek geçerli satır bulunamadı.")
+
+    st.markdown("---")
+    st.markdown("### Bugünkü kayıtlar")
+    today_df = get_shift_logs(date.today(), date.today())
+    st.dataframe(today_df, use_container_width=True, hide_index=True)
+
+
+def page_history() -> None:
+    render_header(
+        "Geçmiş Loglar ve Filtreleme",
+        "Tarih, sürücü, grup, vardiya ve plaka filtrelerini birlikte kullanarak geçmiş operasyonu incele.",
+    )
+
+    groups = get_groups_df()
+    drivers = get_driver_options(active_only=False)
+    all_shifts_df = read_df("SELECT DISTINCT shift FROM shift_logs ORDER BY shift")
+    shift_options = ["Tümü"] + (all_shifts_df["shift"].tolist() if not all_shifts_df.empty else DEFAULT_SHIFTS)
+    plate_options = ["Tümü"] + get_plate_options(include_inactive=True, include_log_values=True)
+
+    with st.expander("Filtreler", expanded=True):
+        c1, c2, c3, c4 = st.columns(4)
+        start_date = c1.date_input("Başlangıç", value=date.today() - timedelta(days=30), format="DD.MM.YYYY")
+        end_date = c2.date_input("Bitiş", value=date.today(), format="DD.MM.YYYY")
+        include_passive = c3.checkbox("Pasif sürücüleri dahil et", value=True)
+        all_time = c4.checkbox("Tüm zamanlar", value=False)
+
+        c5, c6, c7, c8 = st.columns(4)
+        driver_label_options = ["Tümü"] + [f"{d['full_name']} · {d['group_name']}" for d in drivers]
+        driver_label = c5.selectbox("Personel", driver_label_options)
+        driver_id = None
+        if driver_label != "Tümü":
+            driver_id = int(drivers[driver_label_options.index(driver_label) - 1]["id"])
+
+        group_label_options = ["Tümü"] + groups["name"].tolist()
+        group_label = c6.selectbox("Grup", group_label_options)
+        group_id = None if group_label == "Tümü" else int(groups.loc[groups["name"] == group_label, "id"].iloc[0])
+
+        shift_filter = c7.selectbox("Vardiya", shift_options)
+        plate_exact = c8.selectbox("Plaka", plate_options)
+
+        c9, c10 = st.columns([1, 3])
+        plate_filter = c9.text_input("Plaka içinde ara", placeholder="Örn: TBTU0003")
+        c10.caption("Plaka filtresi, Plaka Yönetimi listesinden ve geçmiş loglarda kullanılan plakalardan otomatik oluşur. Net plaka için dropdown; parça arama için metin kutusunu kullanabilirsin.")
+
+    if start_date > end_date and not all_time:
+        st.error("Başlangıç tarihi bitiş tarihinden büyük olamaz.")
+        return
+
+    df = get_shift_logs(
+        start=None if all_time else start_date,
+        end=None if all_time else end_date,
+        driver_id=driver_id,
+        group_id=group_id,
+        shift=shift_filter,
+        plate_exact=plate_exact,
+        plate_contains=plate_filter,
+        include_passive=include_passive,
+    )
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Filtrelenen Kayıt", len(df))
+    c2.metric("Sürücü Sayısı", df["Sürücü"].nunique() if not df.empty else 0)
+    c3.metric("Araç Plakası", df["Araç Plakası"].nunique() if not df.empty else 0)
+    c4.metric("Vardiya Tipi", df["Vardiya"].nunique() if not df.empty else 0)
+
+    st.dataframe(df, use_container_width=True, hide_index=True)
+    if not df.empty:
+        show_downloads(df, "gecmis_loglar")
+
+        st.markdown("---")
+        st.subheader("Hatalı kayıt düzeltme / silme")
+        st.caption("Yanlış sürücü seçimi, yanlış vardiya saati, yanlış tarih, yanlış plaka veya yanlış not girildiyse kaydı silmeden buradan düzeltebilirsin.")
+        record_labels = [
+            f"{int(row['Kayıt ID'])} · {row['Tarih']} · {row['Sürücü']} · {row['Vardiya']} · {row['Araç Plakası']}"
+            for _, row in df.iterrows()
+        ]
+
+        tab_edit_log, tab_delete_log = st.tabs(["Kaydı Düzenle", "Kaydı Sil"])
+
+        with tab_edit_log:
+            selected_record_edit = st.selectbox("Düzenlenecek kayıt", record_labels, key="edit_log_select")
+            selected_id_edit = int(selected_record_edit.split(" · ")[0])
+            raw_log_df = read_df(
+                """
+                SELECT l.id, l.log_date, l.driver_id, l.shift, l.plate, l.note,
+                       d.full_name, g.name AS group_name
+                FROM shift_logs l
+                JOIN drivers d ON d.id = l.driver_id
+                LEFT JOIN groups g ON g.id = d.group_id
+                WHERE l.id = ?
+                """,
+                (selected_id_edit,),
+            )
+            if raw_log_df.empty:
+                st.warning("Seçilen kayıt bulunamadı.")
+            else:
+                raw_log = raw_log_df.iloc[0]
+                current_start, current_end = parse_shift_label(raw_log["shift"])
+                driver_labels_all = [f"{d['full_name']} · {d['group_name']} · {'Aktif' if d['active'] else 'Pasif'}" for d in drivers]
+                driver_id_lookup = {int(d["id"]): i for i, d in enumerate(drivers)}
+                current_driver_index = driver_id_lookup.get(int(raw_log["driver_id"]), 0)
+
+                current_plate = normalize_plate(raw_log["plate"])
+                editable_plate_options = get_plate_options(include_inactive=False, include_log_values=True)
+                if current_plate and current_plate not in editable_plate_options:
+                    editable_plate_options.append(current_plate)
+                    editable_plate_options = sorted(set(editable_plate_options))
+                manual_choice = "Listede yok / manuel gir"
+                plate_choice_options = editable_plate_options + [manual_choice]
+                current_plate_index = plate_choice_options.index(current_plate) if current_plate in plate_choice_options else plate_choice_options.index(manual_choice)
+
+                with st.form("edit_log_form"):
+                    c1, c2, c3, c4 = st.columns([1, 1, 1, 2])
+                    try:
+                        current_date = datetime.fromisoformat(str(raw_log["log_date"])).date()
+                    except Exception:
+                        current_date = date.today()
+                    edited_date = c1.date_input("Tarih", value=current_date, format="DD.MM.YYYY", key="edit_log_date")
+                    edited_start = c2.selectbox("Giriş Saati", TIME_OPTIONS, index=safe_time_index(current_start), key="edit_log_start")
+                    edited_end = c3.selectbox("Çıkış Saati", TIME_OPTIONS, index=safe_time_index(current_end, "16:00"), key="edit_log_end")
+                    edited_driver_label = c4.selectbox("Sürücü", driver_labels_all, index=current_driver_index, key="edit_log_driver")
+
+                    c5, c6 = st.columns([1, 2])
+                    edited_plate_choice = c5.selectbox("Araç Plakası", plate_choice_options, index=current_plate_index, key="edit_log_plate_choice")
+                    edited_manual_plate = ""
+                    if edited_plate_choice == manual_choice:
+                        edited_manual_plate = c5.text_input("Manuel plaka", value=current_plate, key="edit_log_manual_plate")
+                    edited_note = c6.text_input("Not", value=str(raw_log["note"] or ""), key="edit_log_note")
+                    add_plate_if_missing = st.checkbox("Plaka listesinde yoksa otomatik ekle", value=True, key="edit_log_add_plate")
+                    save_edit = st.form_submit_button("Bu kaydı güncelle", type="primary", use_container_width=True)
+
+                if save_edit:
+                    edited_driver_id = int(drivers[driver_labels_all.index(edited_driver_label)]["id"])
+                    final_plate = normalize_plate(edited_manual_plate if edited_plate_choice == manual_choice else edited_plate_choice)
+                    final_shift = make_shift_label(edited_start, edited_end)
+                    if not final_plate:
+                        st.error("Plaka boş bırakılamaz.")
+                    else:
+                        if add_plate_if_missing:
+                            upsert_vehicle_plate(final_plate, "Geçmiş log düzenlemesinden otomatik eklendi")
+                        execute(
+                            """
+                            UPDATE shift_logs
+                            SET log_date = ?, driver_id = ?, shift = ?, plate = ?, note = ?, updated_at = CURRENT_TIMESTAMP
+                            WHERE id = ?
+                            """,
+                            (edited_date.isoformat(), edited_driver_id, final_shift, final_plate, edited_note.strip(), selected_id_edit),
+                        )
+                        st.success("Log kaydı güncellendi.")
+                        st.rerun()
+
+            st.info("Sürücünün ismi yanlış yazıldıysa: Sürücü Yönetimi > Düzenle / Pasif-Sil alanından isim düzeltilebilir. İsim değişince geçmiş loglar da otomatik yeni isimle görünür.")
+
+        with tab_delete_log:
+            st.caption("Sadece tamamen yanlış girilen log kayıtları için kullanılmalı. Düzeltilebilecek hatalarda önce Kaydı Düzenle sekmesini kullan.")
+            selected_record_delete = st.selectbox("Silinecek kayıt", record_labels, key="delete_log_select")
+            selected_id_delete = int(selected_record_delete.split(" · ")[0])
+            confirm = st.checkbox("Bu log kaydını silmeyi onaylıyorum", key="delete_log_confirm")
+            if st.button("Seçili log kaydını sil", disabled=not confirm, use_container_width=True):
+                execute("DELETE FROM shift_logs WHERE id = ?", (selected_id_delete,))
+                st.success("Log kaydı silindi.")
+                st.rerun()
+
+
+def page_reports() -> None:
+    render_header(
+        "Analiz ve Raporlama",
+        "Operasyon yoğunluğunu tarih, vardiya, grup ve araç bazında grafiklerle değerlendir.",
+    )
+
+    c1, c2 = st.columns(2)
+    start_date = c1.date_input("Rapor başlangıç", value=date.today() - timedelta(days=30), format="DD.MM.YYYY", key="report_start")
+    end_date = c2.date_input("Rapor bitiş", value=date.today(), format="DD.MM.YYYY", key="report_end")
+
+    df = get_shift_logs(start_date, end_date)
+    if df.empty:
+        st.info("Seçilen tarih aralığında raporlanacak kayıt yok.")
+        return
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Toplam Kayıt", len(df))
+    c2.metric("Aktif Gün", df["Tarih"].nunique())
+    c3.metric("Sürücü", df["Sürücü"].nunique())
+    c4.metric("Araç", df["Araç Plakası"].nunique())
+
+    daily = df.groupby("Tarih", as_index=False).size().rename(columns={"size": "Kayıt"})
+    shift = df.groupby("Vardiya", as_index=False).size().rename(columns={"size": "Kayıt"}).sort_values("Kayıt", ascending=False)
+    group = df.groupby("Grup", as_index=False).size().rename(columns={"size": "Kayıt"}).sort_values("Kayıt", ascending=False)
+    vehicles = df.groupby("Araç Plakası", as_index=False).size().rename(columns={"size": "Kullanım"}).sort_values("Kullanım", ascending=False).head(15)
+    drivers = df.groupby("Sürücü", as_index=False).size().rename(columns={"size": "Kayıt"}).sort_values("Kayıt", ascending=False).head(15)
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        chart_or_info(daily, "line", "Günlük Kayıt Akışı", "Tarih", "Kayıt")
+    with col_b:
+        chart_or_info(shift, "bar", "Vardiya Bazlı Dağılım", "Vardiya", "Kayıt")
+
+    col_c, col_d = st.columns(2)
+    with col_c:
+        chart_or_info(group, "pie", "Grup Bazlı Dağılım", "Grup", "Kayıt")
+    with col_d:
+        chart_or_info(vehicles, "bar", "En Çok Kullanılan Araçlar", "Araç Plakası", "Kullanım")
+
+    st.markdown("### En çok kayıt girilen sürücüler")
+    st.dataframe(drivers, use_container_width=True, hide_index=True)
+
+    st.markdown("### Rapor verisi")
+    st.dataframe(df, use_container_width=True, hide_index=True)
+    show_downloads(df, "analiz_raporu")
+
+
+def page_settings() -> None:
+    render_header(
+        "Ayarlar ve Yedekleme",
+        "Logo, veri tabanı, yedek dosyası ve kurulum durumunu kontrol et.",
+    )
+
+    st.markdown("### Sistem durumu")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("SQLite DB", "Hazır" if DB_PATH.exists() else "Yok")
+    c2.metric("Logo", "Hazır" if LOGO_PATH.exists() else "Yok")
+    c3.metric("Sürücü Seed", len(INITIAL_DRIVERS))
+    c4.metric("Plaka Seed", len(INITIAL_VEHICLE_PLATES))
+
+    st.code(f"Veri tabanı yolu: {DB_PATH}")
+
+    st.markdown("### Yedek indir")
+    if DB_PATH.exists():
+        st.download_button(
+            "SQLite veri tabanı yedeğini indir",
+            data=DB_PATH.read_bytes(),
+            file_name=f"celebi_driver_panel_backup_{datetime.now().strftime('%Y%m%d_%H%M')}.sqlite3",
+            mime="application/octet-stream",
+            use_container_width=True,
+        )
+
+    st.markdown("### Kurulum notu")
+    st.markdown(
+        """
+        - GitHub/Streamlit Cloud için ana dosya yolu: `app.py`
+        - Logonun yolu: `assets/celebi_logo.png`
+        - Veriler varsayılan olarak `data/celebi_driver_panel.sqlite3` içinde tutulur.
+        - Streamlit Cloud ücretsiz ortamda dosya sistemi kalıcı garanti vermez; gerçek operasyon kullanımı için sonraki sürümde Supabase/PostgreSQL önerilir.
+        """
+    )
+
+    with st.expander("Tehlikeli alan: Veritabanını sıfırla"):
+        st.warning("Bu işlem tüm vardiya loglarını siler ve başlangıç sürücü listesini yeniden kurar.")
+        confirm_text = st.text_input("Sıfırlamak için SIFIRLA yaz")
+        if st.button("Veritabanını sıfırla", disabled=confirm_text != "SIFIRLA", use_container_width=True):
+            if DB_PATH.exists():
+                DB_PATH.unlink()
+            init_db()
+            st.success("Veritabanı sıfırlandı.")
+            st.rerun()
+
+
+# -----------------------------
+# Uygulama ana akışı
+# -----------------------------
+def main() -> None:
+    init_db()
+    sidebar_logo()
+    theme = st.sidebar.selectbox("Tema", ["Açık", "Koyu"], index=0)
+    inject_css(theme)
+
+    st.sidebar.markdown("### Menü")
+    page = st.sidebar.radio(
+        "Sayfa seç",
+        [
+            "Ana Sayfa",
+            "Sürücü Yönetimi",
+            "Plaka Yönetimi",
+            "Vardiya Girişi",
+            "Geçmiş Loglar",
+            "Analiz Raporları",
+            "Ayarlar / Yedekleme",
+        ],
+        label_visibility="collapsed",
+    )
+
+    st.sidebar.markdown("---")
+    st.sidebar.caption("Çelebi Hava Hizmetleri · Driver Shift Panel")
+
+    if page == "Ana Sayfa":
+        page_dashboard()
+    elif page == "Sürücü Yönetimi":
+        page_driver_management()
+    elif page == "Plaka Yönetimi":
+        page_vehicle_management()
+    elif page == "Vardiya Girişi":
+        page_shift_entry()
+    elif page == "Geçmiş Loglar":
+        page_history()
+    elif page == "Analiz Raporları":
+        page_reports()
+    else:
+        page_settings()
+
+
+if __name__ == "__main__":
+    main()
