@@ -45,9 +45,9 @@ DB_DIR = BASE_DIR / "data"
 DB_PATH = DB_DIR / "celebi_driver_panel.sqlite3"
 LOGO_PATH = BASE_DIR / "assets" / "celebi_logo.png"
 
-SEED_VERSION = "2026-05-20-official-driver-groups-v4"
+SEED_VERSION = "2026-05-21-driver-ac-class-update-v11"
 PLATE_SEED_VERSION = "2026-05-20-official-vehicle-plates-v5"
-APP_BUILD_VERSION = "v6-log-editable-half-hour-shifts"
+APP_BUILD_VERSION = "v8-local-desktop-launcher"
 
 INITIAL_VEHICLE_PLATES = [
     "TBTU000074",
@@ -147,141 +147,144 @@ LEGACY_DRIVER_NAME_ALIASES = [
 INITIAL_GROUPS = OFFICIAL_DRIVER_GROUPS
 
 INITIAL_DRIVER_GROUP_ASSIGNMENTS = [
-    ('UMUT BOĞA', 'D SINIFI'),
-    ('MAZLUM İBRAHİM AKYOL', 'KARGO TRAKTÖRÜ'),
-    ('MAHMUT KARADOĞAN', 'D SINIFI'),
-    ('ÖMER ELE', 'D SINIFI'),
+    ('UMUT BOĞA', 'C SINIFI'),
+    ('MAZLUM İBRAHİM AKYOL', 'C SINIFI'),
+    ('MAHMUT KARADOĞAN', 'C SINIFI'),
+    ('ÖMER ELE', 'C SINIFI'),
     ('TAYFUN ÜZÜM', 'A SINIFI'),
-    ('MUHAMMET EFE BECİT', 'D SINIFI'),
-    ('KENAN KANDO', 'D SINIFI'),
-    ('İSA CEYLAN', 'D SINIFI'),
-    ('DOĞAN KIŞLA', 'KARGO TRAKTÖRÜ'),
-    ('HEYBET KÖRÜK', 'KARGO TRAKTÖRÜ'),
-    ('GÖKHAN ADALI', 'D SINIFI'),
-    ('VEDAT ÖZBAŞ', 'D SINIFI'),
-    ('HÜSEYİN GÜNER', 'D SINIFI'),
+    ('MUHAMMET EFE BECİT', 'C SINIFI'),
+    ('KENAN KANDO', 'C SINIFI'),
+    ('İSA CEYLAN', 'C SINIFI'),
+    ('DOĞAN KIŞLA', 'C SINIFI'),
+    ('HEYBET KÖRÜK', 'C SINIFI'),
+    ('GÖKHAN ADALI', 'C SINIFI'),
+    ('VEDAT ÖZBAŞ', 'C SINIFI'),
+    ('HÜSEYİN GÜNER', 'C SINIFI'),
     ('MAHİR KARABUĞA', 'C SINIFI'),
-    ('EBUBEKİR ŞILTAK', 'D SINIFI'),
-    ('MUSTAFA KAYNAK', 'D SINIFI'),
+    ('EBUBEKİR ŞILTAK', 'C SINIFI'),
+    ('MUSTAFA KAYNAK', 'C SINIFI'),
     ('BÜLENT DOĞAN', 'A SINIFI'),
-    ('ZAFER ŞİRİN', 'ŞUT TRAKTÖRÜ'),
-    ('BERKANT YILDIZ', 'D SINIFI'),
-    ('VEYSEL TUAÇ', 'D SINIFI'),
+    ('ZAFER ŞİRİN', 'C SINIFI'),
+    ('BERKANT YILDIZ', 'C SINIFI'),
+    ('VEYSEL TUAÇ', 'C SINIFI'),
     ('ŞABETTİN KAYA', 'C SINIFI'),
-    ('TOLGAHAN CEYLAN', 'ŞUT TRAKTÖRÜ'),
-    ('AHMET KÖRBALTA', 'D SINIFI'),
+    ('TOLGAHAN CEYLAN', 'C SINIFI'),
+    ('AHMET KÖRBALTA', 'C SINIFI'),
     ('OĞUZHAN ÖKSÜZ', 'A SINIFI'),
     ('YAVUZ KORKMAZ', 'A SINIFI'),
     ('İBRAHİM TEKDEMİR', 'C SINIFI'),
-    ('SAMET UMUT KAMSIZ', 'Tanımlanmamış / Diğer'),
+    ('SAMET UMUT KAMSIZ', 'C SINIFI'),
     ('MEHMET BUZ', 'C SINIFI'),
     ('BİLAL ÇİMEN', 'A SINIFI'),
-    ('MUHARREM EKİN', 'Tanımlanmamış / Diğer'),
+    ('MUHARREM EKİN', 'C SINIFI'),
     ('METİN HACIOĞLU', 'A SINIFI'),
     ('EKREM ÇELİK', 'A SINIFI'),
-    ('MEHMET OLCAY', 'ŞUT TRAKTÖRÜ'),
-    ('AYDIN AKBIYIK', 'RAMP EMNİYET EKİBİ'),
+    ('MEHMET OLCAY', 'C SINIFI'),
+    ('AYDIN AKBIYIK', 'A SINIFI'),
     ('BAYRAM KAPLAN', 'C SINIFI'),
-    ('FUAT BOZTEPE', 'D SINIFI'),
+    ('FUAT BOZTEPE', 'C SINIFI'),
     ('FETHİ KAYA', 'C SINIFI'),
     ('MEHMET ŞİRİN ELİŞ', 'A SINIFI'),
     ('SERCAN KARAKILIÇ', 'A SINIFI'),
     ('SEYİTHAN ESATOĞLU', 'A SINIFI'),
     ('SERDAR ALÇO', 'A SINIFI'),
-    ('CEM KARAKILIÇ', 'D SINIFI'),
+    ('CEM KARAKILIÇ', 'C SINIFI'),
     ('EROL YILMAZ', 'A SINIFI'),
-    ('SEDAT ÇOLAK', 'D SINIFI'),
+    ('SEDAT ÇOLAK', 'C SINIFI'),
     ('CEMAL KARAKAYA', 'A SINIFI'),
-    ('BURAK ÇAKIR', 'D SINIFI'),
-    ('KUBİLAY YILMAZ', 'D SINIFI'),
-    ('HALİL İLKTAŞ', 'RAMP EMNİYET EKİBİ'),
-    ('MEHMET KAYA', 'ŞUT TRAKTÖRÜ'),
+    ('BURAK ÇAKIR', 'C SINIFI'),
+    ('KUBİLAY YILMAZ', 'C SINIFI'),
+    ('HALİL İLKTAŞ', 'A SINIFI'),
+    ('MEHMET KAYA', 'C SINIFI'),
     ('AHMET PETEK', 'C SINIFI'),
-    ('KUBİLAY ANAVATAN', 'D SINIFI'),
-    ('HÜSEYİN ÖZTÜRK', 'ŞUT TRAKTÖRÜ'),
-    ('MÜCAHİT ŞİŞMAN', 'FOLLOW ME'),
-    ('BERKAY ŞAHİN', 'D SINIFI'),
+    ('KUBİLAY ANAVATAN', 'C SINIFI'),
+    ('HÜSEYİN ÖZTÜRK', 'C SINIFI'),
+    ('MÜCAHİT ŞİŞMAN', 'A SINIFI'),
+    ('BERKAY ŞAHİN', 'C SINIFI'),
     ('DURAN KARAKIŞ', 'A SINIFI'),
     ('ENGİN ÖZGÜL', 'C SINIFI'),
-    ('YUNUS EMRE ERDEM', 'D SINIFI'),
-    ('HÜSEYİN DORUK', 'D SINIFI'),
+    ('YUNUS EMRE ERDEM', 'C SINIFI'),
+    ('HÜSEYİN DORUK', 'C SINIFI'),
     ('YÜCEL DOĞAN', 'C SINIFI'),
     ('OZAN ALTİNBAŞ', 'C SINIFI'),
     ('MAHMUT SEYİTOĞLU', 'C SINIFI'),
-    ('TAMER ALÇO', 'FOLLOW ME'),
-    ('FATİH YERLİKAYA', 'D SINIFI'),
-    ('MERT YUMUK', 'D SINIFI'),
+    ('TAMER ALÇO', 'A SINIFI'),
+    ('FATİH YERLİKAYA', 'C SINIFI'),
+    ('MERT YUMUK', 'C SINIFI'),
     ('ABDULAZİZ GÜNEY', 'A SINIFI'),
-    ('MEHMET DİNDAR TAYURAK', 'KARGO TRAKTÖRÜ'),
+    ('MEHMET DİNDAR TAYURAK', 'C SINIFI'),
     ('ALİ YILDIZ', 'A SINIFI'),
     ('HALİL BÜYÜKARSLAN', 'A SINIFI'),
-    ('CUMA YALÇIN', 'Tanımlanmamış / Diğer'),
-    ('ABDULSELAM ARPACI', 'D SINIFI'),
-    ('MUSA ÖZER', 'D SINIFI'),
+    ('CUMA YALÇIN', 'C SINIFI'),
+    ('ABDULSELAM ARPACI', 'C SINIFI'),
+    ('MUSA ÖZER', 'C SINIFI'),
     ('TOLGA KURU HÜSEYİNO', 'A SINIFI'),
-    ('MUSA KESKİN', 'D SINIFI'),
+    ('MUSA KESKİN', 'C SINIFI'),
     ('CİHAN ERGENER', 'A SINIFI'),
     ('RAMAZAN ÇORAK', 'A SINIFI'),
-    ('EYÜP ALKAÇ', 'ŞUT TRAKTÖRÜ'),
+    ('EYÜP ALKAÇ', 'C SINIFI'),
     ('YEMEN ADAR', 'A SINIFI'),
     ('HÜRKAAN KAZAN', 'A SINIFI'),
-    ('VEYSEL YILDIZ', 'D SINIFI'),
-    ('OZAN KOLDEMİR', 'D SINIFI'),
+    ('VEYSEL YILDIZ', 'C SINIFI'),
+    ('OZAN KOLDEMİR', 'C SINIFI'),
     ('HAŞİM YÜKSEL', 'A SINIFI'),
     ('BARIŞ TOSUN', 'A SINIFI'),
-    ('METİN ACAR', 'D SINIFI'),
-    ('ENES YÖRENTİ', 'D SINIFI'),
-    ('ÖMER GÜNEŞ', 'Tanımlanmamış / Diğer'),
-    ('KENAN KARATAY', 'D SINIFI'),
-    ('TAMER İLHAN', 'ŞUT TRAKTÖRÜ'),
-    ('MEHMET TÜRK', 'SINIF YÜKSELME EĞİTİMLERİ'),
-    ('YASİN ÇELEBİ', 'D SINIFI'),
-    ('MÜJDAT KAYA', 'ŞUT TRAKTÖRÜ'),
-    ('EMRE KARAKAYA', 'D SINIFI'),
+    ('METİN ACAR', 'C SINIFI'),
+    ('ENES YÖRENTİ', 'C SINIFI'),
+    ('ÖMER GÜNEŞ', 'C SINIFI'),
+    ('KENAN KARATAY', 'C SINIFI'),
+    ('TAMER İLHAN', 'C SINIFI'),
+    ('MEHMET TÜRK', 'C SINIFI'),
+    ('YASİN ÇELEBİ', 'C SINIFI'),
+    ('MÜJDAT KAYA', 'C SINIFI'),
+    ('EMRE KARAKAYA', 'C SINIFI'),
     ('MEHMET SARAÇ', 'C SINIFI'),
-    ('BEKİR YILMAZ', 'Tanımlanmamış / Diğer'),
-    ('ÖMER HARUNGÜNEŞ', 'D SINIFI'),
+    ('BEKİR YILMAZ', 'C SINIFI'),
+    ('ÖMER HARUNGÜNEŞ', 'C SINIFI'),
     ('AŞUR COŞAR', 'A SINIFI'),
-    ('EBUBEKİR BAY', 'D SINIFI'),
+    ('EBUBEKİR BAY', 'C SINIFI'),
     ('ERKAN ŞAHİN', 'C SINIFI'),
-    ('TAYFUN MİLDAN', 'D SINIFI'),
-    ('EMRULLAH ZENGİN', 'TEMIZLIK_TRAKTOR'),
-    ('İSA KESKİN', 'D SINIFI'),
+    ('TAYFUN MİLDAN', 'C SINIFI'),
+    ('EMRULLAH ZENGİN', 'C SINIFI'),
+    ('İSA KESKİN', 'C SINIFI'),
     ('RÜŞTÜ GÜLEN', 'A SINIFI'),
     ('DOĞAN TÖNGEL', 'A SINIFI'),
-    ('FATİH ERDİN', 'D SINIFI'),
-    ('MEHMET ŞILTAK', 'D SINIFI'),
+    ('FATİH ERDİN', 'C SINIFI'),
+    ('MEHMET ŞILTAK', 'C SINIFI'),
     ('METİN AYDIN', 'A SINIFI'),
-    ('MUHAMMED TURSUN', 'ŞUT TRAKTÖRÜ'),
-    ('İSMAİL AYTEKİN', 'D SINIFI'),
-    ('CİHAN BARA', 'D SINIFI'),
-    ('AHMET IRMAK', 'RAMP EMNİYET EKİBİ'),
+    ('MUHAMMED TURSUN', 'C SINIFI'),
+    ('İSMAİL AYTEKİN', 'C SINIFI'),
+    ('CİHAN BARA', 'C SINIFI'),
+    ('AHMET IRMAK', 'A SINIFI'),
     ('TOLGA ÖCAL', 'C SINIFI'),
     ('SAİT GÖKMEN', 'A SINIFI'),
     ('CİHAN SAĞ', 'C SINIFI'),
     ('UMUT AYAS OKTAY', 'SINIF YÜKSELME EĞİTİMLERİ'),
-    ('ERDAL YILMAZ', 'D SINIFI'),
-    ('YASİN ÇELİK', 'D SINIFI'),
+    ('ERDAL YILMAZ', 'C SINIFI'),
+    ('YASİN ÇELİK', 'C SINIFI'),
     ('EMRE MÜDÜROĞLU', 'C SINIFI'),
     ('SERDAR SEKENDÜR', 'SINIF YÜKSELME EĞİTİMLERİ'),
     ('MAHMUT KOCAOĞLU', 'A SINIFI'),
-    ('KAMİL BOZTEPE', 'D SINIFI'),
+    ('KAMİL BOZTEPE', 'C SINIFI'),
     ('ORKUN ARAS', 'A SINIFI'),
-    ('ALİ BAYRAM', 'KARGO TRAKTÖRÜ'),
-    ('OSMAN ATAÇ', 'D SINIFI'),
+    ('ALİ BAYRAM', 'C SINIFI'),
+    ('OSMAN ATAÇ', 'C SINIFI'),
     ('MESUT ÇAKIR', 'A SINIFI'),
     ('MESUT DOĞAN KARAGÖZ', 'C SINIFI'),
-    ('HÜSEYİN BEKDEMİR', 'RAMP EMNİYET EKİBİ'),
-    ('AHMET ERAY ÇELİK', 'D SINIFI'),
+    ('HÜSEYİN BEKDEMİR', 'C SINIFI'),
+    ('AHMET ERAY ÇELİK', 'C SINIFI'),
     ('YASİN AKKUŞ', 'A SINIFI'),
     ('RECEP ACAR', 'A SINIFI'),
     ('SAVAŞ YEŞİL', 'SINIF YÜKSELME EĞİTİMLERİ'),
-    ('CİHAN DAĞKUŞU', 'ŞUT TRAKTÖRÜ'),
-    ('MEHMET SAİT YALMAN', 'D SINIFI'),
+    ('CİHAN DAĞKUŞU', 'C SINIFI'),
+    ('MEHMET SAİT YALMAN', 'C SINIFI'),
     ('MEVLÜT AYAZ', 'A SINIFI'),
-    ('HABİB BALCİ', 'D SINIFI'),
-    ('TURGAY ARIKAN', 'D SINIFI'),
-    ('BAYRAM EFE', 'RAMP EMNİYET EKİBİ'),
+    ('HABİB BALCİ', 'C SINIFI'),
+    ('TURGAY ARIKAN', 'C SINIFI'),
+    ('BAYRAM EFE', 'C SINIFI'),
+    ('İBRAHİM DİNÇER', 'C SINIFI'),
+    ('MUSTAFA SARIBAŞ', 'C SINIFI'),
+    ('RAMAZAN BOZAN', 'C SINIFI'),
 ]
 
 INITIAL_DRIVERS = [name for name, _group in INITIAL_DRIVER_GROUP_ASSIGNMENTS]
@@ -403,6 +406,8 @@ def init_db() -> None:
                 driver_id INTEGER NOT NULL,
                 shift TEXT NOT NULL,
                 plate TEXT NOT NULL,
+                vehicle_take_time TEXT DEFAULT '',
+                vehicle_drop_time TEXT DEFAULT '',
                 note TEXT DEFAULT '',
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -438,6 +443,14 @@ def init_db() -> None:
             );
             """
         )
+
+
+        # V10: Eski veritabanlarında araç alma/bırakma saati kolonları yoksa ekle.
+        existing_shift_columns = [row[1] for row in conn.execute("PRAGMA table_info(shift_logs)").fetchall()]
+        if "vehicle_take_time" not in existing_shift_columns:
+            conn.execute("ALTER TABLE shift_logs ADD COLUMN vehicle_take_time TEXT DEFAULT ''")
+        if "vehicle_drop_time" not in existing_shift_columns:
+            conn.execute("ALTER TABLE shift_logs ADD COLUMN vehicle_drop_time TEXT DEFAULT ''")
 
 
         # Resmi plaka listesi v5 ilk açılışta bir kere yüklenir. Sonradan silinen plaka otomatik geri eklenmez.
@@ -959,6 +972,8 @@ def get_shift_logs(
             d.full_name AS 'Sürücü',
             g.name AS 'Grup',
             l.shift AS 'Vardiya',
+            l.vehicle_take_time AS 'Araç Alma Saati',
+            l.vehicle_drop_time AS 'Araç Bırakma Saati',
             l.plate AS 'Araç Plakası',
             l.note AS 'Not',
             CASE WHEN d.active = 1 THEN 'Aktif' ELSE 'Pasif' END AS 'Sürücü Durumu',
@@ -1589,6 +1604,10 @@ def page_shift_entry() -> None:
         driver_lookup = {f"{d['full_name']} · {d['group_name']}": d for d in drivers}
         selected_driver_label = c4.selectbox("Sürücü seçimi", driver_labels)
 
+        c_vehicle_take, c_vehicle_drop = st.columns(2)
+        vehicle_take_time = c_vehicle_take.selectbox("Araç Alma Saati", TIME_OPTIONS, index=safe_time_index(entry_time))
+        vehicle_drop_time = c_vehicle_drop.selectbox("Araç Bırakma Saati", TIME_OPTIONS, index=safe_time_index(exit_time, "16:00"))
+
         c5, c6 = st.columns([1, 2])
         active_plate_options = get_plate_options(include_inactive=False, include_log_values=False)
         manual_choice = "Listede yok / manuel gir"
@@ -1612,8 +1631,8 @@ def page_shift_entry() -> None:
             if plate_choice == manual_choice and add_manual_to_master:
                 upsert_vehicle_plate(clean_plate, "Vardiya girişinden otomatik eklendi")
             execute(
-                "INSERT INTO shift_logs (log_date, driver_id, shift, plate, note) VALUES (?, ?, ?, ?, ?)",
-                (log_date.isoformat(), int(selected_driver["id"]), clean_shift, clean_plate, note.strip()),
+                "INSERT INTO shift_logs (log_date, driver_id, shift, plate, vehicle_take_time, vehicle_drop_time, note) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (log_date.isoformat(), int(selected_driver["id"]), clean_shift, clean_plate, vehicle_take_time, vehicle_drop_time, note.strip()),
             )
             st.success("Vardiya ve araç kaydı eklendi.")
             st.rerun()
@@ -1626,7 +1645,7 @@ def page_shift_entry() -> None:
     active_plate_options_for_batch = get_plate_options(include_inactive=False, include_log_values=False)
     batch_date = st.date_input("Toplu kayıt tarihi", value=date.today(), format="DD.MM.YYYY", key="batch_date")
     initial_batch = pd.DataFrame(
-        [{"Sürücü": "", "Giriş Saati": "08:00", "Çıkış Saati": "16:00", "Araç Plakası": "", "Not": ""} for _ in range(5)]
+        [{"Sürücü": "", "Giriş Saati": "08:00", "Çıkış Saati": "16:00", "Araç Alma Saati": "08:00", "Araç Bırakma Saati": "16:00", "Araç Plakası": "", "Not": ""} for _ in range(5)]
     )
     edited = st.data_editor(
         initial_batch,
@@ -1637,6 +1656,8 @@ def page_shift_entry() -> None:
             "Sürücü": st.column_config.SelectboxColumn("Sürücü", options=[""] + driver_name_options, required=False),
             "Giriş Saati": st.column_config.SelectboxColumn("Giriş Saati", options=TIME_OPTIONS, required=False),
             "Çıkış Saati": st.column_config.SelectboxColumn("Çıkış Saati", options=TIME_OPTIONS, required=False),
+            "Araç Alma Saati": st.column_config.SelectboxColumn("Araç Alma Saati", options=TIME_OPTIONS, required=False),
+            "Araç Bırakma Saati": st.column_config.SelectboxColumn("Araç Bırakma Saati", options=TIME_OPTIONS, required=False),
             "Araç Plakası": st.column_config.SelectboxColumn(
                 "Araç Plakası",
                 options=[""] + active_plate_options_for_batch,
@@ -1655,20 +1676,22 @@ def page_shift_entry() -> None:
             dname = str(row.get("Sürücü", "")).strip()
             entry = str(row.get("Giriş Saati", "")).strip()
             exit_ = str(row.get("Çıkış Saati", "")).strip()
+            vehicle_take = str(row.get("Araç Alma Saati", "")).strip()
+            vehicle_drop = str(row.get("Araç Bırakma Saati", "")).strip()
             pl = normalize_plate(row.get("Araç Plakası", ""))
             nt = str(row.get("Not", "")).strip()
             if not dname and not entry and not exit_ and not pl:
                 continue
-            if dname in driver_id_by_name and entry in TIME_OPTIONS and exit_ in TIME_OPTIONS and pl:
-                rows_to_insert.append((batch_date.isoformat(), driver_id_by_name[dname], make_shift_label(entry, exit_), pl, nt))
+            if dname in driver_id_by_name and entry in TIME_OPTIONS and exit_ in TIME_OPTIONS and vehicle_take in TIME_OPTIONS and vehicle_drop in TIME_OPTIONS and pl:
+                rows_to_insert.append((batch_date.isoformat(), driver_id_by_name[dname], make_shift_label(entry, exit_), pl, vehicle_take, vehicle_drop, nt))
             else:
                 skipped += 1
         if rows_to_insert:
             # Toplu girişte seçilen plaka master listeden gelir. Yine de güvenlik için eksikse master listeye eklenir.
-            for _date, _driver_id, _shift, inserted_plate, _note in rows_to_insert:
+            for _date, _driver_id, _shift, inserted_plate, _vehicle_take, _vehicle_drop, _note in rows_to_insert:
                 upsert_vehicle_plate(inserted_plate, "Toplu vardiya girişinden otomatik eklendi")
             executemany(
-                "INSERT INTO shift_logs (log_date, driver_id, shift, plate, note) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO shift_logs (log_date, driver_id, shift, plate, vehicle_take_time, vehicle_drop_time, note) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 rows_to_insert,
             )
             st.success(f"{len(rows_to_insert)} kayıt eklendi. Eksik olduğu için atlanan satır: {skipped}")
@@ -1759,7 +1782,7 @@ def page_history() -> None:
             selected_id_edit = int(selected_record_edit.split(" · ")[0])
             raw_log_df = read_df(
                 """
-                SELECT l.id, l.log_date, l.driver_id, l.shift, l.plate, l.note,
+                SELECT l.id, l.log_date, l.driver_id, l.shift, l.plate, l.vehicle_take_time, l.vehicle_drop_time, l.note,
                        d.full_name, g.name AS group_name
                 FROM shift_logs l
                 JOIN drivers d ON d.id = l.driver_id
@@ -1797,6 +1820,10 @@ def page_history() -> None:
                     edited_end = c3.selectbox("Çıkış Saati", TIME_OPTIONS, index=safe_time_index(current_end, "16:00"), key="edit_log_end")
                     edited_driver_label = c4.selectbox("Sürücü", driver_labels_all, index=current_driver_index, key="edit_log_driver")
 
+                    c_vehicle_take, c_vehicle_drop = st.columns(2)
+                    edited_vehicle_take = c_vehicle_take.selectbox("Araç Alma Saati", TIME_OPTIONS, index=safe_time_index(str(raw_log.get("vehicle_take_time", "") or edited_start), edited_start), key="edit_log_vehicle_take")
+                    edited_vehicle_drop = c_vehicle_drop.selectbox("Araç Bırakma Saati", TIME_OPTIONS, index=safe_time_index(str(raw_log.get("vehicle_drop_time", "") or edited_end), edited_end), key="edit_log_vehicle_drop")
+
                     c5, c6 = st.columns([1, 2])
                     edited_plate_choice = c5.selectbox("Araç Plakası", plate_choice_options, index=current_plate_index, key="edit_log_plate_choice")
                     edited_manual_plate = ""
@@ -1818,10 +1845,10 @@ def page_history() -> None:
                         execute(
                             """
                             UPDATE shift_logs
-                            SET log_date = ?, driver_id = ?, shift = ?, plate = ?, note = ?, updated_at = CURRENT_TIMESTAMP
+                            SET log_date = ?, driver_id = ?, shift = ?, plate = ?, vehicle_take_time = ?, vehicle_drop_time = ?, note = ?, updated_at = CURRENT_TIMESTAMP
                             WHERE id = ?
                             """,
-                            (edited_date.isoformat(), edited_driver_id, final_shift, final_plate, edited_note.strip(), selected_id_edit),
+                            (edited_date.isoformat(), edited_driver_id, final_shift, final_plate, edited_vehicle_take, edited_vehicle_drop, edited_note.strip(), selected_id_edit),
                         )
                         st.success("Log kaydı güncellendi.")
                         st.rerun()
@@ -1967,7 +1994,7 @@ def page_reports() -> None:
             show_downloads(driver_shift_summary, "personel_vardiya_ozeti")
 
         with tab_day:
-            daily_detail = df[["Tarih", "Sürücü", "Grup", "Vardiya", "Araç Plakası", "Not", "Kayıt ID"]].sort_values(
+            daily_detail = df[["Tarih", "Sürücü", "Grup", "Vardiya", "Araç Alma Saati", "Araç Bırakma Saati", "Araç Plakası", "Not", "Kayıt ID"]].sort_values(
                 ["Tarih", "Sürücü", "Vardiya"], ascending=[False, True, True]
             )
             st.dataframe(daily_detail, use_container_width=True, hide_index=True)
@@ -2026,10 +2053,11 @@ def page_settings() -> None:
     st.markdown("### Kurulum notu")
     st.markdown(
         """
-        - GitHub/Streamlit Cloud için ana dosya yolu: `app.py`
+        - Bilgisayarda çift tıkla açmak için: `BASLAT.bat`
         - Logonun yolu: `assets/celebi_logo.png`
-        - Veriler varsayılan olarak `data/celebi_driver_panel.sqlite3` içinde tutulur.
-        - Streamlit Cloud ücretsiz ortamda dosya sistemi kalıcı garanti vermez; gerçek operasyon kullanımı için sonraki sürümde Supabase/PostgreSQL önerilir.
+        - Veriler bu klasörün içinde `data/celebi_driver_panel.sqlite3` dosyasında tutulur.
+        - Uygulamayı başka bilgisayara taşırken `data` klasörünü de taşırsan geçmiş kayıtlar korunur.
+        - Yedek almak için aşağıdaki SQLite yedek indirme butonunu kullanabilirsin.
         """
     )
 
