@@ -299,7 +299,11 @@ DEFAULT_SHIFTS = [
 ]
 
 # V6: Vardiya artık serbest metin değil; giriş/çıkış saatleri 30 dakikalık seçeneklerden oluşturulur.
-TIME_OPTIONS = [f"{hour:02d}:{minute:02d}" for hour in range(24) for minute in (0, 5)]
+TIME_OPTIONS = [
+    f"{hour:02d}:{minute:02d}"
+    for hour in range(24)
+    for minute in range(0, 60, 5)
+]
 
 
 def make_shift_label(start_time: str, end_time: str) -> str:
