@@ -1,0 +1,28 @@
+<div class="table-wrap">
+<table>
+    <thead>
+        <tr>
+            <th>Tarih</th><th>Sürücü</th><th>Grup</th><th>Vardiya</th><th>Araç Alma</th><th>Araç Bırakma</th><th>Plaka</th><th>Not</th>{% if show_actions %}<th>İşlem</th>{% endif %}
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in records %}
+        <tr>
+            <td>{{ r.operation_date|date:'d.m.Y' }}</td>
+            <td>{{ r.driver.full_name }}</td>
+            <td><span class="badge">{{ r.driver.group.name }}</span></td>
+            <td>{{ r.shift_start|time:'H:i' }} - {{ r.shift_end|time:'H:i' }}</td>
+            <td>{{ r.vehicle_pickup_time|time:'H:i'|default:'-' }}</td>
+            <td>{{ r.vehicle_dropoff_time|time:'H:i'|default:'-' }}</td>
+            <td>{% if r.vehicle %}{{ r.vehicle.plate }}{% else %}<span class="badge warning">Plaka yok</span>{% endif %}</td>
+            <td>{{ r.note|default:'-' }}</td>
+            {% if show_actions %}
+            <td class="actions"><a href="{% url 'shift_edit' r.id %}">Düzenle</a><a class="danger" href="{% url 'shift_delete' r.id %}">Sil</a></td>
+            {% endif %}
+        </tr>
+        {% empty %}
+        <tr><td colspan="9" class="empty">Kayıt bulunamadı.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>

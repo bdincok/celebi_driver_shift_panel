@@ -1,0 +1,52 @@
+{% load static %}
+<!doctype html>
+<html lang="tr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ISTCLB Driver Giriş</title>
+    <link rel="stylesheet" href="{% static 'panel/css/style.css' %}">
+</head>
+<body class="login-body">
+    <div class="sky-layer">
+        <span class="plane p1">✈</span>
+        <span class="plane p2">✈</span>
+        <span class="plane p3">✈</span>
+        <span class="cloud c1"></span>
+        <span class="cloud c2"></span>
+        <span class="cloud c3"></span>
+    </div>
+    <section class="login-shell">
+        <div class="login-hero">
+            <div class="small-label">ISTCLB DRIVER OPERATIONS</div>
+            <h1>Vardiya ve Araç Yönetim Paneli</h1>
+            <p>Koordine ve müdür yetkilerine göre ayrılmış, internet üzerinden erişilebilir operasyon paneli.</p>
+        </div>
+        <div class="role-grid">
+            <form class="role-card manager" method="post" action="{% url 'role_login' %}">
+                {% csrf_token %}
+                <input type="hidden" name="role" value="mudur">
+                <div class="role-icon">🛫</div>
+                <h2>Müdür Girişi</h2>
+                <p>Tüm sayfalara, raporlara, geçmiş loglara ve yönetim alanına erişim.</p>
+                <input type="password" name="password" placeholder="Müdür şifresi" required>
+                <button type="submit">Müdür Olarak Giriş Yap</button>
+            </form>
+            <form class="role-card coordinator" method="post" action="{% url 'role_login' %}">
+                {% csrf_token %}
+                <input type="hidden" name="role" value="koordine">
+                <div class="role-icon">🛬</div>
+                <h2>Koordine Girişi</h2>
+                <p>Ana sayfa, sürücü yönetimi, plaka yönetimi ve vardiya girişi erişimi.</p>
+                <input type="password" name="password" placeholder="Koordine şifresi" required>
+                <button type="submit">Koordine Olarak Giriş Yap</button>
+            </form>
+        </div>
+        {% if messages %}
+            <div class="login-messages">
+                {% for message in messages %}<div class="message {{ message.tags }}">{{ message }}</div>{% endfor %}
+            </div>
+        {% endif %}
+    </section>
+</body>
+</html>

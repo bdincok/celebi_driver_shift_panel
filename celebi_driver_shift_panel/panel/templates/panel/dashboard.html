@@ -1,0 +1,16 @@
+{% extends 'panel/base.html' %}
+{% block title %}Ana Sayfa{% endblock %}
+{% block content %}
+<div class="page-head">
+    <div><span class="eyebrow">Operasyon Özeti</span><h1>Ana Sayfa</h1></div>
+</div>
+<div class="cards">
+    <div class="stat-card"><span>Aktif Sürücü</span><strong>{{ active_drivers }}</strong></div>
+    <div class="stat-card"><span>Aktif Plaka</span><strong>{{ active_vehicles }}</strong></div>
+    <div class="stat-card"><span>Bugünkü Kayıt</span><strong>{{ today_records }}</strong></div>
+</div>
+<div class="panel-card">
+    <h2>Son Kayıtlar</h2>
+    {% include 'panel/partials_records_table.html' with records=last_records show_actions=False %}
+</div>
+{% endblock %}

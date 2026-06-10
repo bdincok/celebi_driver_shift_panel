@@ -1,0 +1,9 @@
+{% extends 'panel/base.html' %}
+{% block title %}Silme Onayı{% endblock %}
+{% block content %}
+<div class="panel-card narrow">
+    <h1>Kaydı silmek istiyor musun?</h1>
+    <p>{{ object }}</p>
+    <form method="post" class="button-row">{% csrf_token %}<button class="danger-button" type="submit">Evet, Sil</button><a class="secondary-link" href="{{ back_url }}">Vazgeç</a></form>
+</div>
+{% endblock %}

@@ -1,0 +1,21 @@
+ISTCLB DRIVER - YEREL CIFT TIKLA SURUMU
+
+1) ZIP dosyasini mutlaka klasore cikarin.
+2) Klasorun icindeki BASLAT.bat dosyasina cift tiklayin.
+3) Ilk acilista paketleri kurar ve veritabanini hazirlar.
+4) Tarayicida otomatik olarak http://127.0.0.1:8000 acilir.
+
+Giris sifreleri:
+- Mudur: zaferberat32
+- Koordine: ıstclb2026
+
+Verilerin tutuldugu dosya:
+data\istclbdriver_local.sqlite3
+
+Bu dosya silinmedigi surece kayitlar kalir.
+BASLAT.bat her acilista backups klasorune otomatik yedek almaya calisir.
+Elle yedek icin YEDEK_AL.bat dosyasini calistirabilirsiniz.
+
+ONEMLI:
+Bu yerel surum tek bilgisayarda calisir. Baska bilgisayara ayni ZIP'i kurarsaniz veriler ortak olmaz.
+Ortak kullanim icin sabit IP / sunucu / ag ayari gerekir.

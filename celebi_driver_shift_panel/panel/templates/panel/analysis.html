@@ -1,0 +1,43 @@
+{% extends 'panel/base.html' %}
+{% block title %}Analiz Raporları{% endblock %}
+{% block content %}
+<div class="page-head"><div><span class="eyebrow">Müdür Alanı</span><h1>Analiz Raporları</h1></div>
+    <div class="export-buttons">
+        <a class="primary-link" href="{% url 'export_shift_csv' %}?{{ request.GET.urlencode }}">CSV İndir</a>
+        <a class="primary-link" href="{% url 'export_shift_excel' %}?{{ request.GET.urlencode }}">Excel İndir</a>
+        <a class="primary-link" href="{% url 'export_shift_pdf' %}?{{ request.GET.urlencode }}">PDF İndir</a>
+    </div>
+</div>
+<div class="panel-card">
+    <form method="get" class="filter-row filter-grid">{{ form.as_p }}<button type="submit">Raporla</button></form>
+</div>
+
+<div class="panel-card">
+    <h2>Grafikli Gösterimler</h2>
+    <div class="chart-grid">
+        <div class="chart-card">
+            <h3>Günlük Kayıt Akışı</h3>
+            {% include 'panel/partials_bar_chart.html' with items=daily_chart empty_text='Günlük kayıt yok' %}
+        </div>
+        <div class="chart-card">
+            <h3>Vardiya Bazlı Dağılım</h3>
+            {% include 'panel/partials_bar_chart.html' with items=shift_chart empty_text='Vardiya kaydı yok' %}
+        </div>
+        <div class="chart-card">
+            <h3>Grup Bazlı Dağılım</h3>
+            {% include 'panel/partials_bar_chart.html' with items=group_chart empty_text='Grup kaydı yok' %}
+        </div>
+        <div class="chart-card">
+            <h3>En Çok Kullanılan Plakalar</h3>
+            {% include 'panel/partials_bar_chart.html' with items=vehicle_chart empty_text='Plaka kaydı yok' %}
+        </div>
+    </div>
+</div>
+
+<div class="split-grid three">
+    <div class="panel-card"><h2>Sürücü Kullanım Özeti</h2><table><tbody>{% for x in driver_summary %}<tr><td>{{ x.driver__full_name }}</td><td><strong>{{ x.total }}</strong></td></tr>{% empty %}<tr><td>Kayıt yok</td></tr>{% endfor %}</tbody></table></div>
+    <div class="panel-card"><h2>Plaka Kullanım Özeti</h2><table><tbody>{% for x in vehicle_summary %}<tr><td>{{ x.vehicle__plate|default:'Plakasız' }}</td><td><strong>{{ x.total }}</strong></td></tr>{% empty %}<tr><td>Kayıt yok</td></tr>{% endfor %}</tbody></table></div>
+    <div class="panel-card"><h2>Grup Özeti</h2><table><tbody>{% for x in group_summary %}<tr><td>{{ x.driver__group__name }}</td><td><strong>{{ x.total }}</strong></td></tr>{% empty %}<tr><td>Kayıt yok</td></tr>{% endfor %}</tbody></table></div>
+</div>
+<div class="panel-card"><h2>Detay Kayıtlar</h2>{% include 'panel/partials_records_table.html' with records=records show_actions=False %}</div>
+{% endblock %}
