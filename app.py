@@ -47,7 +47,25 @@ LOGO_PATH = BASE_DIR / "assets" / "celebi_logo.png"
 
 SEED_VERSION = "2026-05-21-driver-ac-class-update-v11"
 PLATE_SEED_VERSION = "2026-05-20-official-vehicle-plates-v5"
-APP_BUILD_VERSION = "v8-local-desktop-launcher"
+APP_BUILD_VERSION = "v13-streamlit-github-5min"
+
+MANAGER_PASSWORD = "zaferberat32"
+COORDINATOR_PASSWORD = "ıstclb2026"
+MANAGER_PAGES = [
+    "Ana Sayfa",
+    "Sürücü Yönetimi",
+    "Plaka Yönetimi",
+    "Vardiya Girişi",
+    "Geçmiş Loglar",
+    "Analiz Raporları",
+    "Ayarlar / Yedekleme",
+]
+COORDINATOR_PAGES = [
+    "Ana Sayfa",
+    "Sürücü Yönetimi",
+    "Plaka Yönetimi",
+    "Vardiya Girişi",
+]
 
 INITIAL_VEHICLE_PLATES = [
     "TBTU000074",
@@ -299,11 +317,7 @@ DEFAULT_SHIFTS = [
 ]
 
 # V6: Vardiya artık serbest metin değil; giriş/çıkış saatleri 30 dakikalık seçeneklerden oluşturulur.
-TIME_OPTIONS = [
-    f"{hour:02d}:{minute:02d}"
-    for hour in range(24)
-    for minute in range(0, 60, 5)
-]
+TIME_OPTIONS = [f"{hour:02d}:{minute:02d}" for hour in range(24) for minute in range(0, 60, 5)]
 
 
 def make_shift_label(start_time: str, end_time: str) -> str:
@@ -627,14 +641,22 @@ def inject_css(theme: str) -> None:
                 gap: 22px;
             }}
             .hero-left {{ display: flex; align-items: center; gap: 18px; }}
-            .hero-logo {{
-                width: 124px;
-                max-height: 82px;
-                object-fit: contain;
-                border-radius: 12px;
-                background: #fff;
-                padding: 8px;
+            .hero-plane {{
+                width: 84px;
+                height: 84px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 24px;
+                background: linear-gradient(135deg, var(--c-surface2), var(--c-surface));
                 border: 1px solid var(--c-border);
+                box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 14px 24px rgba(0,0,0,.10);
+                font-size: 40px;
+                animation: heroPlaneFloat 3.2s ease-in-out infinite;
+            }}
+            @keyframes heroPlaneFloat {{
+                0%, 100% {{ transform: translateY(0) rotate(-6deg); }}
+                50% {{ transform: translateY(-7px) rotate(2deg); }}
             }}
             .hero-title {{
                 font-size: 28px;
@@ -800,7 +822,7 @@ def inject_css(theme: str) -> None:
                 }}
                 .hero-left {{ flex-direction: column; align-items: flex-start; }}
                 .hero-title {{ font-size: 22px; }}
-                .hero-logo {{ width: 104px; }}
+                .hero-plane {{ width: 70px; height: 70px; font-size: 34px; }}
                 .pill {{ white-space: normal; }}
                 .block-container {{ padding-left: 0.9rem; padding-right: 0.9rem; }}
             }}
@@ -810,13 +832,11 @@ def inject_css(theme: str) -> None:
     )
 
 def render_header(title: str, subtitle: str) -> None:
-    logo64 = image_to_base64(str(LOGO_PATH))
-    img_html = f'<img class="hero-logo" src="data:image/png;base64,{logo64}" />' if logo64 else ""
     st.markdown(
         f"""
         <div class="hero-card">
             <div class="hero-left">
-                {img_html}
+                <div class="hero-plane">✈️</div>
                 <div>
                     <div class="hero-title">{title}</div>
                     <p class="hero-subtitle">{subtitle}</p>
@@ -1117,8 +1137,7 @@ def show_downloads(df: pd.DataFrame, prefix: str) -> None:
 
 
 def sidebar_logo() -> None:
-    if LOGO_PATH.exists():
-        st.sidebar.image(str(LOGO_PATH), use_container_width=True)
+    st.sidebar.markdown("### ✈️ Driver Panel")
     st.sidebar.markdown("---")
 
 
@@ -1597,7 +1616,7 @@ def page_shift_entry() -> None:
         return
 
     st.markdown("### Tekil kayıt girişi")
-    st.caption("Vardiya artık iki ayrı alanla girilir: giriş saati ve çıkış saati. Saat seçenekleri 30 dakika aralıklıdır.")
+    st.caption("Vardiya artık iki ayrı alanla girilir: giriş saati ve çıkış saati. Saat seçenekleri 5 dakika aralıklıdır.")
     with st.form("single_log_form", clear_on_submit=True):
         c1, c2, c3, c4 = st.columns([1, 1, 1, 2])
         log_date = c1.date_input("Tarih", value=date.today(), format="DD.MM.YYYY")
@@ -1643,7 +1662,7 @@ def page_shift_entry() -> None:
 
     st.markdown("---")
     st.markdown("### Toplu kayıt girişi")
-    st.caption("Aynı tarih için birden fazla sürücü kaydını hızlı girmek için tabloyu doldur. Giriş ve çıkış saatleri 30 dakika aralıklı seçilir.")
+    st.caption("Aynı tarih için birden fazla sürücü kaydını hızlı girmek için tabloyu doldur. Giriş ve çıkış saatleri 5 dakika aralıklı seçilir.")
 
     driver_name_options = [d["full_name"] for d in drivers]
     active_plate_options_for_batch = get_plate_options(include_inactive=False, include_log_values=False)
@@ -2032,15 +2051,14 @@ def page_reports() -> None:
 def page_settings() -> None:
     render_header(
         "Ayarlar ve Yedekleme",
-        "Logo, veri tabanı, yedek dosyası ve kurulum durumunu kontrol et.",
+        "Veri tabanı, yedek dosyası ve kurulum durumunu kontrol et.",
     )
 
     st.markdown("### Sistem durumu")
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3 = st.columns(3)
     c1.metric("SQLite DB", "Hazır" if DB_PATH.exists() else "Yok")
-    c2.metric("Logo", "Hazır" if LOGO_PATH.exists() else "Yok")
-    c3.metric("Sürücü Seed", len(INITIAL_DRIVERS))
-    c4.metric("Plaka Seed", len(INITIAL_VEHICLE_PLATES))
+    c2.metric("Sürücü Seed", len(INITIAL_DRIVERS))
+    c3.metric("Plaka Seed", len(INITIAL_VEHICLE_PLATES))
 
     st.code(f"Veri tabanı yolu: {DB_PATH}")
 
@@ -2058,7 +2076,6 @@ def page_settings() -> None:
     st.markdown(
         """
         - Bilgisayarda çift tıkla açmak için: `BASLAT.bat`
-        - Logonun yolu: `assets/celebi_logo.png`
         - Veriler bu klasörün içinde `data/celebi_driver_panel.sqlite3` dosyasında tutulur.
         - Uygulamayı başka bilgisayara taşırken `data` klasörünü de taşırsan geçmiş kayıtlar korunur.
         - Yedek almak için aşağıdaki SQLite yedek indirme butonunu kullanabilirsin.
@@ -2076,27 +2093,366 @@ def page_settings() -> None:
             st.rerun()
 
 
+
+# -----------------------------
+# Giriş / Yetkilendirme
+# -----------------------------
+def hide_sidebar_for_login() -> None:
+    st.markdown(
+        """
+        <style>
+            [data-testid="stSidebar"] { display: none; }
+            [data-testid="collapsedControl"] { display: none; }
+            .block-container { padding-top: 0 !important; max-width: 100% !important; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def inject_login_css() -> None:
+    st.markdown(
+        """
+        <style>
+            .stApp {
+                background:
+                    radial-gradient(circle at 18% 20%, rgba(255,255,255,.24) 0, rgba(255,255,255,0) 24%),
+                    radial-gradient(circle at 82% 18%, rgba(255,255,255,.18) 0, rgba(255,255,255,0) 24%),
+                    linear-gradient(135deg, #06101f 0%, #0d2444 42%, #111827 100%);
+                overflow-x: hidden;
+            }
+            .login-shell {
+                min-height: 100vh;
+                position: relative;
+                padding: 48px 6vw 42px 6vw;
+                color: #ffffff;
+            }
+            .login-grid {
+                position: relative;
+                z-index: 5;
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 26px;
+                align-items: stretch;
+                max-width: 1180px;
+                margin: 0 auto;
+                padding-top: 44px;
+            }
+            .login-title-card {
+                position: relative;
+                z-index: 5;
+                max-width: 1180px;
+                margin: 0 auto;
+                border: 1px solid rgba(255,255,255,.18);
+                background: rgba(255,255,255,.10);
+                backdrop-filter: blur(18px);
+                border-radius: 30px;
+                padding: 30px 34px;
+                box-shadow: 0 28px 90px rgba(0,0,0,.32);
+                overflow: hidden;
+            }
+            .login-kicker {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                padding: 8px 13px;
+                border: 1px solid rgba(255,255,255,.20);
+                border-radius: 999px;
+                color: rgba(255,255,255,.86);
+                background: rgba(255,255,255,.08);
+                font-size: 13px;
+                margin-bottom: 14px;
+            }
+            .login-title {
+                font-size: clamp(34px, 4vw, 58px);
+                line-height: 1.02;
+                letter-spacing: -0.05em;
+                font-weight: 900;
+                margin: 0 0 12px 0;
+                color: #ffffff;
+            }
+            .login-subtitle {
+                font-size: 16px;
+                line-height: 1.65;
+                max-width: 720px;
+                color: rgba(255,255,255,.74);
+                margin: 0;
+            }
+            .login-card {
+                border: 1px solid rgba(255,255,255,.16);
+                background: rgba(255,255,255,.11);
+                backdrop-filter: blur(18px);
+                border-radius: 28px;
+                padding: 26px;
+                box-shadow: 0 24px 75px rgba(0,0,0,.28);
+                min-height: 270px;
+                transition: transform .25s ease, border-color .25s ease, background .25s ease;
+            }
+            .login-card:hover {
+                transform: translateY(-5px);
+                border-color: rgba(255,255,255,.34);
+                background: rgba(255,255,255,.15);
+            }
+            .login-card h3 {
+                color: #ffffff !important;
+                font-size: 27px;
+                margin: 0 0 10px 0;
+                letter-spacing: -0.02em;
+            }
+            .login-card p, .login-card li {
+                color: rgba(255,255,255,.76) !important;
+                font-size: 14px;
+                line-height: 1.55;
+            }
+            .role-chip {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                padding: 8px 12px;
+                border-radius: 999px;
+                border: 1px solid rgba(255,255,255,.18);
+                color: rgba(255,255,255,.86);
+                background: rgba(255,255,255,.08);
+                font-size: 13px;
+                margin-bottom: 16px;
+            }
+            .login-form-wrap {
+                position: relative;
+                z-index: 8;
+                max-width: 520px;
+                margin: 28px auto 0 auto;
+                border: 1px solid rgba(255,255,255,.18);
+                background: rgba(255,255,255,.12);
+                backdrop-filter: blur(18px);
+                border-radius: 26px;
+                padding: 22px 24px;
+                box-shadow: 0 22px 68px rgba(0,0,0,.30);
+            }
+            .login-form-title {
+                color: #ffffff;
+                font-weight: 800;
+                font-size: 22px;
+                margin-bottom: 4px;
+            }
+            .login-form-subtitle {
+                color: rgba(255,255,255,.70);
+                font-size: 13px;
+                margin-bottom: 14px;
+            }
+            .plane-stage {
+                position: absolute;
+                inset: 0;
+                pointer-events: none;
+                overflow: hidden;
+                z-index: 1;
+            }
+            .plane {
+                position: absolute;
+                top: 18%;
+                left: -14%;
+                font-size: 68px;
+                filter: drop-shadow(0 16px 20px rgba(0,0,0,.35));
+                animation: flyAcross 9s cubic-bezier(.45,.05,.25,1) infinite;
+            }
+            .plane::after {
+                content: "";
+                position: absolute;
+                width: 180px;
+                height: 2px;
+                right: 54px;
+                top: 46px;
+                background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,.45));
+                transform: rotate(-8deg);
+            }
+            .cloud {
+                position: absolute;
+                width: 240px;
+                height: 70px;
+                border-radius: 999px;
+                background: rgba(255,255,255,.08);
+                filter: blur(.2px);
+                animation: cloudMove 18s linear infinite;
+            }
+            .cloud.one { top: 24%; left: 8%; animation-delay: -2s; }
+            .cloud.two { top: 58%; left: 62%; width: 310px; opacity: .76; animation-delay: -8s; }
+            .cloud.three { top: 78%; left: 16%; width: 190px; opacity: .54; animation-delay: -12s; }
+            @keyframes flyAcross {
+                0% { transform: translate3d(0, 38px, 0) rotate(-8deg); opacity: 0; }
+                9% { opacity: 1; }
+                50% { transform: translate3d(56vw, -28px, 0) rotate(5deg); opacity: 1; }
+                88% { opacity: 1; }
+                100% { transform: translate3d(122vw, -88px, 0) rotate(7deg); opacity: 0; }
+            }
+            @keyframes cloudMove {
+                0% { transform: translateX(-18vw); }
+                100% { transform: translateX(112vw); }
+            }
+            .login-shell .stButton > button {
+                width: 100%;
+                border-radius: 16px;
+                height: 52px;
+                border: 1px solid rgba(255,255,255,.22);
+                background: rgba(255,255,255,.94);
+                color: #0b1220 !important;
+                font-weight: 800;
+                box-shadow: 0 14px 36px rgba(0,0,0,.22);
+                transition: transform .2s ease, box-shadow .2s ease;
+            }
+            .login-shell .stButton > button:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 18px 44px rgba(0,0,0,.32);
+                border-color: rgba(255,255,255,.55);
+            }
+            .login-shell input {
+                color: #ffffff !important;
+                background: rgba(255,255,255,.10) !important;
+                border: 1px solid rgba(255,255,255,.22) !important;
+                border-radius: 14px !important;
+            }
+            .login-shell label, .login-shell label * {
+                color: rgba(255,255,255,.82) !important;
+            }
+            .login-shell .stAlert, .login-shell .stAlert * {
+                color: #ffffff !important;
+            }
+            @media (max-width: 820px) {
+                .login-shell { padding: 24px 16px; }
+                .login-grid { grid-template-columns: 1fr; padding-top: 18px; }
+                .login-title-card { padding: 24px; border-radius: 24px; }
+                .login-card { min-height: auto; }
+                .plane { font-size: 52px; }
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_login_page() -> bool:
+    hide_sidebar_for_login()
+    inject_login_css()
+
+    if "auth_role" not in st.session_state:
+        st.session_state.auth_role = None
+    if "login_role_choice" not in st.session_state:
+        st.session_state.login_role_choice = None
+
+    st.markdown(
+        """
+        <div class="login-shell">
+            <div class="plane-stage">
+                <div class="plane">✈️</div>
+                <div class="cloud one"></div>
+                <div class="cloud two"></div>
+                <div class="cloud three"></div>
+            </div>
+            <div class="login-title-card">
+                <div class="login-kicker">✈️ Operasyon Paneli · Güvenli Giriş</div>
+                <h1 class="login-title">Sürücü Vardiya ve Araç Yönetim Paneli</h1>
+                <p class="login-subtitle">Devam etmek için yetki türünü seç. Müdür girişi tüm sayfalara erişir; koordine girişi günlük operasyon sayfalarına erişir.</p>
+            </div>
+            <div class="login-grid">
+                <div class="login-card">
+                    <div class="role-chip">👔 Sol taraf · Müdür</div>
+                    <h3>Müdür Girişi</h3>
+                    <p>Tüm yönetim ve raporlama alanlarına erişim sağlar.</p>
+                    <ul>
+                        <li>Geçmiş loglar</li>
+                        <li>Analiz raporları</li>
+                        <li>Ayarlar ve yedekleme</li>
+                    </ul>
+                </div>
+                <div class="login-card">
+                    <div class="role-chip">🧭 Sağ taraf · Koordine</div>
+                    <h3>Koordine Girişi</h3>
+                    <p>Günlük operasyon girişi ve temel yönetim alanlarına erişim sağlar.</p>
+                    <ul>
+                        <li>Ana sayfa</li>
+                        <li>Sürücü ve plaka yönetimi</li>
+                        <li>Vardiya girişi</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    c_left, c_right = st.columns(2)
+    with c_left:
+        if st.button("👔 Müdür Girişi", use_container_width=True):
+            st.session_state.login_role_choice = "manager"
+            st.rerun()
+    with c_right:
+        if st.button("🧭 Koordine Girişi", use_container_width=True):
+            st.session_state.login_role_choice = "coordinator"
+            st.rerun()
+
+    selected_role = st.session_state.get("login_role_choice")
+    if selected_role:
+        role_label = "Müdür" if selected_role == "manager" else "Koordine"
+        expected_password = MANAGER_PASSWORD if selected_role == "manager" else COORDINATOR_PASSWORD
+        st.markdown(
+            f"""
+            <div class="login-form-wrap">
+                <div class="login-form-title">{role_label} şifresi</div>
+                <div class="login-form-subtitle">Seçilen giriş türü için şifreyi gir.</div>
+            """,
+            unsafe_allow_html=True,
+        )
+        with st.form("login_password_form", clear_on_submit=False):
+            password = st.text_input("Şifre", type="password")
+            submitted = st.form_submit_button("Giriş Yap", use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+        if submitted:
+            if password == expected_password:
+                st.session_state.auth_role = selected_role
+                st.session_state.auth_role_label = role_label
+                st.session_state.login_role_choice = None
+                st.rerun()
+            else:
+                st.error("Şifre hatalı. Lütfen tekrar dene.")
+
+    return False
+
+
+def is_logged_in() -> bool:
+    return st.session_state.get("auth_role") in {"manager", "coordinator"}
+
+
+def logout() -> None:
+    for key in ["auth_role", "auth_role_label", "login_role_choice"]:
+        if key in st.session_state:
+            del st.session_state[key]
+    st.rerun()
+
+
 # -----------------------------
 # Uygulama ana akışı
 # -----------------------------
 def main() -> None:
     init_db()
+
+    if not is_logged_in():
+        render_login_page()
+        return
+
     sidebar_logo()
     theme = st.sidebar.selectbox("Tema", ["Açık", "Koyu"], index=0)
     inject_css(theme)
 
+    role = st.session_state.get("auth_role", "coordinator")
+    role_label = st.session_state.get("auth_role_label", "Koordine")
+    allowed_pages = MANAGER_PAGES if role == "manager" else COORDINATOR_PAGES
+
+    st.sidebar.markdown(f"**Giriş türü:** {role_label}")
+    if st.sidebar.button("Çıkış yap", use_container_width=True):
+        logout()
+
     st.sidebar.markdown("### Menü")
     page = st.sidebar.radio(
         "Sayfa seç",
-        [
-            "Ana Sayfa",
-            "Sürücü Yönetimi",
-            "Plaka Yönetimi",
-            "Vardiya Girişi",
-            "Geçmiş Loglar",
-            "Analiz Raporları",
-            "Ayarlar / Yedekleme",
-        ],
+        allowed_pages,
         label_visibility="collapsed",
     )
 
