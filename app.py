@@ -2,7 +2,7 @@
 """
 Çelebi Hava Hizmetleri - Sürücü Vardiya ve Araç Yönetim Paneli
 Streamlit + Supabase PostgreSQL tek dosya uygulama.
-
+ 
 Çalıştırma:
     pip install -r requirements.txt
     streamlit run app.py
