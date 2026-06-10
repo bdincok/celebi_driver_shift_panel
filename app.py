@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Çelebi Hava Hizmetleri - Sürücü Vardiya ve Araç Yönetim Paneli
-Streamlit + SQLite tek dosya uygulama.
+Streamlit + Supabase PostgreSQL tek dosya uygulama.
 
 Çalıştırma:
     pip install -r requirements.txt
@@ -12,7 +12,10 @@ from __future__ import annotations
 
 import base64
 import os
-import sqlite3
+import re
+from contextlib import closing
+
+import psycopg2
 from datetime import date, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
@@ -41,16 +44,11 @@ except Exception:
 
 APP_TITLE = "Çelebi Sürücü Vardiya ve Araç Yönetim Paneli"
 BASE_DIR = Path(__file__).resolve().parent
-DB_DIR = BASE_DIR / "data"
-DB_PATH = DB_DIR / "celebi_driver_panel.sqlite3"
 LOGO_PATH = BASE_DIR / "assets" / "celebi_logo.png"
 
 SEED_VERSION = "2026-05-21-driver-ac-class-update-v11"
 PLATE_SEED_VERSION = "2026-05-20-official-vehicle-plates-v5"
-APP_BUILD_VERSION = "v13-streamlit-github-5min"
-
-MANAGER_PASSWORD = "zaferberat32"
-COORDINATOR_PASSWORD = "ıstclb2026"
+APP_BUILD_VERSION = "v14-streamlit-supabase-postgresql"
 MANAGER_PAGES = [
     "Ana Sayfa",
     "Sürücü Yönetimi",
@@ -365,11 +363,103 @@ def normalize_plate(value: str) -> str:
     return " ".join(str(value).strip().upper().replace("-", "-").split())
 
 
-def connect() -> sqlite3.Connection:
-    DB_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.execute("PRAGMA foreign_keys = ON;")
-    return conn
+def get_config_value(key: str, default: str = "") -> str:
+    """Streamlit Secrets veya environment değişkeninden güvenli ayar okur."""
+    value = None
+    try:
+        value = st.secrets.get(key)  # Streamlit Cloud Secrets
+    except Exception:
+        value = None
+    if value is None:
+        value = os.environ.get(key, default)
+    return str(value).strip() if value is not None else default
+
+
+def get_database_url() -> str:
+    return get_config_value("DATABASE_URL") or get_config_value("SUPABASE_DATABASE_URL")
+
+
+def mask_database_url(url: str) -> str:
+    if not url:
+        return "Tanımlı değil"
+    return re.sub(r"://([^:/@]+):([^@]+)@", r"://\1:***@", url)
+
+
+def with_sslmode_require(url: str) -> str:
+    """Supabase bağlantılarında SSL gerekli olduğu için eksikse sslmode=require ekler."""
+    if not url:
+        return url
+    lowered = url.lower()
+    if "sslmode=" in lowered:
+        return url
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}sslmode=require"
+
+
+def to_pg_query(query: str) -> str:
+    """Supabase PostgreSQL stilindeki bazı sorguları PostgreSQL uyumlu hale getirir."""
+    q = query
+    q = re.sub(r"AS\s+'([^']+)'", r'AS "\1"', q)
+    q = re.sub(r"\bAS\s+(Vardiya|Kayıt|Grup|Kullanım)\b", r'AS "\1"', q)
+    q = q.replace("ORDER BY Kayıt", 'ORDER BY "Kayıt"')
+
+    stripped = " ".join(q.strip().split())
+    if stripped.startswith("INSERT OR IGNORE INTO vehicle_plates"):
+        q = """
+            INSERT INTO vehicle_plates (plate, active, notes)
+            VALUES (%s, 1, %s)
+            ON CONFLICT (plate) DO NOTHING
+        """
+    elif stripped.startswith("INSERT OR IGNORE INTO groups"):
+        q = """
+            INSERT INTO groups (name, description)
+            VALUES (%s, %s)
+            ON CONFLICT (name) DO NOTHING
+        """
+    else:
+        q = q.replace("?", "%s")
+    return q
+
+
+class PostgresConnection:
+    def __init__(self):
+        database_url = get_database_url()
+        if not database_url:
+            raise RuntimeError("DATABASE_URL tanımlı değil. Streamlit Cloud > App > Settings > Secrets bölümüne DATABASE_URL eklenmeli.")
+        self._conn = psycopg2.connect(with_sslmode_require(database_url))
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        try:
+            if exc_type:
+                self._conn.rollback()
+            else:
+                self._conn.commit()
+        finally:
+            self._conn.close()
+        return False
+
+    def execute(self, query: str, params: Iterable = ()):  # sqlite benzeri kullanım için
+        cur = self._conn.cursor()
+        cur.execute(to_pg_query(query), tuple(params))
+        return cur
+
+    def executemany(self, query: str, params: Iterable[Iterable]):
+        cur = self._conn.cursor()
+        cur.executemany(to_pg_query(query), [tuple(p) for p in params])
+        return cur
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+
+def connect() -> PostgresConnection:
+    return PostgresConnection()
 
 
 def execute(query: str, params: Iterable = ()) -> None:
@@ -385,93 +475,110 @@ def executemany(query: str, params: Iterable[Iterable]) -> None:
 
 
 def read_df(query: str, params: Iterable = ()) -> pd.DataFrame:
-    with connect() as conn:
-        return pd.read_sql_query(query, conn, params=tuple(params))
+    database_url = get_database_url()
+    if not database_url:
+        return pd.DataFrame()
+    with closing(psycopg2.connect(with_sslmode_require(database_url))) as conn:
+        return pd.read_sql_query(to_pg_query(query), conn, params=tuple(params))
 
 
 def fetch_one(query: str, params: Iterable = ()):
     with connect() as conn:
-        return conn.execute(query, tuple(params)).fetchone()
+        cur = conn.execute(query, tuple(params))
+        return cur.fetchone()
+
+
+def table_columns(conn: PostgresConnection, table_name: str) -> set[str]:
+    cur = conn.execute(
+        """
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = %s
+        """,
+        (table_name,),
+    )
+    return {row[0] for row in cur.fetchall()}
 
 
 def init_db() -> None:
+    """Supabase PostgreSQL tablolarını oluşturur ve başlangıç verilerini yükler."""
     with connect() as conn:
-        conn.executescript(
+        conn.execute(
             """
             CREATE TABLE IF NOT EXISTS groups (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 name TEXT NOT NULL UNIQUE,
                 description TEXT DEFAULT '',
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );
-
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS drivers (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 full_name TEXT NOT NULL UNIQUE,
-                group_id INTEGER NOT NULL,
+                group_id INTEGER NOT NULL REFERENCES groups(id),
                 active INTEGER NOT NULL DEFAULT 1,
                 phone TEXT DEFAULT '',
                 notes TEXT DEFAULT '',
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(group_id) REFERENCES groups(id)
-            );
-
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS shift_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 log_date TEXT NOT NULL,
-                driver_id INTEGER NOT NULL,
+                driver_id INTEGER NOT NULL REFERENCES drivers(id) ON DELETE RESTRICT,
                 shift TEXT NOT NULL,
                 plate TEXT NOT NULL,
                 vehicle_take_time TEXT DEFAULT '',
                 vehicle_drop_time TEXT DEFAULT '',
                 note TEXT DEFAULT '',
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(driver_id) REFERENCES drivers(id) ON DELETE RESTRICT
-            );
-
-
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS vehicle_plates (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 plate TEXT NOT NULL UNIQUE,
                 active INTEGER NOT NULL DEFAULT 1,
                 notes TEXT DEFAULT '',
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_vehicle_plates_plate ON vehicle_plates(plate);
-            CREATE INDEX IF NOT EXISTS idx_vehicle_plates_active ON vehicle_plates(active);
-
-            CREATE INDEX IF NOT EXISTS idx_shift_logs_date ON shift_logs(log_date);
-            CREATE INDEX IF NOT EXISTS idx_shift_logs_driver ON shift_logs(driver_id);
-            CREATE INDEX IF NOT EXISTS idx_shift_logs_shift ON shift_logs(shift);
-            CREATE INDEX IF NOT EXISTS idx_shift_logs_plate ON shift_logs(plate);
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
             """
         )
-
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS app_settings (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL,
-                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
             """
         )
 
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_vehicle_plates_plate ON vehicle_plates(plate)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_vehicle_plates_active ON vehicle_plates(active)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_shift_logs_date ON shift_logs(log_date)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_shift_logs_driver ON shift_logs(driver_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_shift_logs_shift ON shift_logs(shift)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_shift_logs_plate ON shift_logs(plate)")
 
-        # V10: Eski veritabanlarında araç alma/bırakma saati kolonları yoksa ekle.
-        existing_shift_columns = [row[1] for row in conn.execute("PRAGMA table_info(shift_logs)").fetchall()]
-        if "vehicle_take_time" not in existing_shift_columns:
+        shift_cols = table_columns(conn, "shift_logs")
+        if "vehicle_take_time" not in shift_cols:
             conn.execute("ALTER TABLE shift_logs ADD COLUMN vehicle_take_time TEXT DEFAULT ''")
-        if "vehicle_drop_time" not in existing_shift_columns:
+        if "vehicle_drop_time" not in shift_cols:
             conn.execute("ALTER TABLE shift_logs ADD COLUMN vehicle_drop_time TEXT DEFAULT ''")
 
-
-        # Resmi plaka listesi v5 ilk açılışta bir kere yüklenir. Sonradan silinen plaka otomatik geri eklenmez.
         plate_seed_row = conn.execute(
             "SELECT value FROM app_settings WHERE key = ?",
             ("vehicle_plate_seed_version",),
@@ -491,7 +598,6 @@ def init_db() -> None:
                 ("vehicle_plate_seed_version", PLATE_SEED_VERSION),
             )
 
-        # Önceden loglara manuel yazılmış ama master listede olmayan plakalar varsa kaybolmasın diye pasif değil aktif listeye eklenir.
         existing_log_plates = conn.execute(
             "SELECT DISTINCT plate FROM shift_logs WHERE plate IS NOT NULL AND TRIM(plate) <> ''"
         ).fetchall()
@@ -501,7 +607,6 @@ def init_db() -> None:
                 (normalize_plate(log_plate), "Eski vardiya loglarından otomatik aktarıldı"),
             )
 
-        # Resmi sürücü grupları her açılışta eksikse eklenir; mevcut kayıtlar korunur.
         conn.executemany(
             "INSERT OR IGNORE INTO groups (name, description) VALUES (?, ?)",
             INITIAL_GROUPS,
@@ -519,7 +624,6 @@ def init_db() -> None:
         }
 
         if not seed_already_applied:
-            # Eski sürümdeki bazı yazım/split farklarını yeni resmi listeye taşı.
             for old_name, new_name in LEGACY_DRIVER_NAME_ALIASES:
                 old_clean = normalize_name(old_name)
                 new_clean = normalize_name(new_name)
@@ -531,7 +635,6 @@ def init_db() -> None:
                         (new_clean, old_row[0]),
                     )
 
-            # Her sürücüyü resmi grubu ile oluştur / ilk migration sırasında gruba taşı.
             for driver_name, group_name in INITIAL_DRIVER_GROUP_ASSIGNMENTS:
                 clean_name = normalize_name(driver_name)
                 group_id = group_id_by_name[group_name]
@@ -547,7 +650,6 @@ def init_db() -> None:
                         (clean_name, group_id),
                     )
 
-            # Resmi listede olmayan ve hiçbir sürücüye bağlı kalmayan eski genel grupları temizle.
             official_group_names = {name for name, _desc in INITIAL_GROUPS}
             for legacy_group_name in LEGACY_GROUP_NAMES:
                 if legacy_group_name in official_group_names:
@@ -568,6 +670,31 @@ def init_db() -> None:
                 ("driver_group_seed_version", SEED_VERSION),
             )
         conn.commit()
+
+
+def ensure_runtime_config() -> bool:
+    """Eksik Supabase/şifre ayarlarını kullanıcıya anlaşılır şekilde gösterir."""
+    missing = []
+    if not get_database_url():
+        missing.append("DATABASE_URL")
+    if not get_config_value("MANAGER_PASSWORD"):
+        missing.append("MANAGER_PASSWORD")
+    if not get_config_value("COORDINATOR_PASSWORD"):
+        missing.append("COORDINATOR_PASSWORD")
+
+    if not missing:
+        return True
+
+    inject_css("Açık")
+    render_header(
+        "Kurulum Ayarları Eksik",
+        "Supabase PostgreSQL bağlantısı ve giriş şifreleri Streamlit Secrets içine eklenmeli.",
+    )
+    st.error("Eksik ayarlar: " + ", ".join(missing))
+    st.markdown("Streamlit Cloud > App > Settings > Secrets bölümüne şu formatta ekle:")
+    st.code('DATABASE_URL = "postgresql://..."\nMANAGER_PASSWORD = "müdür_şifren"\nCOORDINATOR_PASSWORD = "koordine_şifren"', language="toml")
+    st.info("Bu bilgiler GitHub koduna yazılmaz. Böylece uygulama reboot olsa bile veriler Supabase PostgreSQL içinde kalır.")
+    return False
 
 
 @st.cache_data(show_spinner=False)
@@ -842,7 +969,7 @@ def render_header(title: str, subtitle: str) -> None:
                     <p class="hero-subtitle">{subtitle}</p>
                 </div>
             </div>
-            <div class="pill">SQLite kayıt sistemi · Streamlit panel · Mobil uyumlu</div>
+            <div class="pill">Supabase PostgreSQL · Streamlit panel · Mobil uyumlu</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -2051,47 +2178,45 @@ def page_reports() -> None:
 def page_settings() -> None:
     render_header(
         "Ayarlar ve Yedekleme",
-        "Veri tabanı, yedek dosyası ve kurulum durumunu kontrol et.",
+        "Supabase PostgreSQL bağlantısını, seed durumunu ve dışa aktarım yedeklerini kontrol et.",
     )
 
     st.markdown("### Sistem durumu")
     c1, c2, c3 = st.columns(3)
-    c1.metric("SQLite DB", "Hazır" if DB_PATH.exists() else "Yok")
+    c1.metric("Veritabanı", "Supabase PostgreSQL")
     c2.metric("Sürücü Seed", len(INITIAL_DRIVERS))
     c3.metric("Plaka Seed", len(INITIAL_VEHICLE_PLATES))
 
-    st.code(f"Veri tabanı yolu: {DB_PATH}")
+    st.code(f"DATABASE_URL: {mask_database_url(get_database_url())}")
 
     st.markdown("### Yedek indir")
-    if DB_PATH.exists():
-        st.download_button(
-            "SQLite veri tabanı yedeğini indir",
-            data=DB_PATH.read_bytes(),
-            file_name=f"celebi_driver_panel_backup_{datetime.now().strftime('%Y%m%d_%H%M')}.sqlite3",
-            mime="application/octet-stream",
-            use_container_width=True,
-        )
+    st.caption("Bu bölüm veritabanı dosyası indirmez; Supabase'deki canlı verileri CSV / Excel / PDF olarak dışa aktarır.")
+    all_logs = get_shift_logs(start=None, end=None, include_passive=True)
+    if all_logs.empty:
+        st.info("Henüz indirilecek vardiya logu yok.")
+    else:
+        show_downloads(all_logs, "tum_vardiya_loglari_yedek")
 
     st.markdown("### Kurulum notu")
     st.markdown(
         """
-        - Bilgisayarda çift tıkla açmak için: `BASLAT.bat`
-        - Veriler bu klasörün içinde `data/celebi_driver_panel.sqlite3` dosyasında tutulur.
-        - Uygulamayı başka bilgisayara taşırken `data` klasörünü de taşırsan geçmiş kayıtlar korunur.
-        - Yedek almak için aşağıdaki SQLite yedek indirme butonunu kullanabilirsin.
+        - Veriler artık Streamlit içine değil, Supabase PostgreSQL veritabanına kaydedilir.
+        - Uygulama reboot olsa veya yeniden deploy edilse bile kayıtlar Supabase tarafında kalır.
+        - GitHub koduna şifre veya veritabanı bağlantısı yazma; bunları Streamlit Secrets içinde tut.
+        - Ek güvenlik için düzenli olarak bu sayfadan Excel yedeği indir.
         """
     )
 
-    with st.expander("Tehlikeli alan: Veritabanını sıfırla"):
-        st.warning("Bu işlem tüm vardiya loglarını siler ve başlangıç sürücü listesini yeniden kurar.")
-        confirm_text = st.text_input("Sıfırlamak için SIFIRLA yaz")
-        if st.button("Veritabanını sıfırla", disabled=confirm_text != "SIFIRLA", use_container_width=True):
-            if DB_PATH.exists():
-                DB_PATH.unlink()
+    with st.expander("Tehlikeli alan: Canlı veritabanını sıfırla"):
+        st.warning("Bu işlem Supabase PostgreSQL içindeki tüm vardiya loglarını, sürücüleri, plakaları ve ayarları siler. Sadece test kurulumunda kullan.")
+        confirm_text = st.text_input("Sıfırlamak için SUPABASE SIFIRLA yaz")
+        if st.button("Canlı veritabanını sıfırla", disabled=confirm_text != "SUPABASE SIFIRLA", use_container_width=True):
+            with connect() as conn:
+                conn.execute("TRUNCATE TABLE shift_logs, drivers, groups, vehicle_plates, app_settings RESTART IDENTITY CASCADE")
+                conn.commit()
             init_db()
-            st.success("Veritabanı sıfırlandı.")
+            st.success("Supabase veritabanı sıfırlandı ve başlangıç verileri yeniden yüklendi.")
             st.rerun()
-
 
 
 # -----------------------------
@@ -2391,7 +2516,7 @@ def render_login_page() -> bool:
     selected_role = st.session_state.get("login_role_choice")
     if selected_role:
         role_label = "Müdür" if selected_role == "manager" else "Koordine"
-        expected_password = MANAGER_PASSWORD if selected_role == "manager" else COORDINATOR_PASSWORD
+        expected_password = get_config_value("MANAGER_PASSWORD") if selected_role == "manager" else get_config_value("COORDINATOR_PASSWORD")
         st.markdown(
             f"""
             <div class="login-form-wrap">
@@ -2431,6 +2556,8 @@ def logout() -> None:
 # Uygulama ana akışı
 # -----------------------------
 def main() -> None:
+    if not ensure_runtime_config():
+        return
     init_db()
 
     if not is_logged_in():
