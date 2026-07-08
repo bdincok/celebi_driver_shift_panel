@@ -602,6 +602,7 @@ COORDINATOR_PAGES = [
     "Sürücü Yönetimi",
     "Plaka Yönetimi",
     "Vardiya Girişi",
+    "Analiz Raporları",
 ]
 
 INITIAL_VEHICLE_PLATES = [
@@ -1834,36 +1835,78 @@ def to_pdf_bytes(df: pd.DataFrame, title: str) -> bytes:
     return output.getvalue()
 
 
-def show_downloads(df: pd.DataFrame, prefix: str) -> None:
+def show_downloads(
+    df: pd.DataFrame,
+    prefix: str,
+    allow_coordinator_excel: bool = False,
+) -> None:
+    """İndirme düğmelerini kullanıcı rolüne göre gösterir.
+
+    Müdür tüm sayfalarda Excel, CSV ve PDF indirebilir.
+    Koordine yalnızca açıkça izin verilen yerde Excel indirebilir.
+    """
+    role = st.session_state.get("auth_role", "coordinator")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+
+    if role == "coordinator":
+        if not allow_coordinator_excel:
+            return
+
+        st.download_button(
+            "Filtrelenmiş verileri Excel olarak indir",
+            data=to_excel_bytes(df, "Filtrelenmiş Geçmiş Veriler"),
+            file_name=f"{prefix}_{timestamp}.xlsx",
+            mime=(
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
+            ),
+            use_container_width=True,
+            key=f"coordinator_excel_{prefix}",
+        )
+        return
+
     c1, c2, c3 = st.columns(3)
+
     with c1:
         st.download_button(
             "Excel indir (.xlsx)",
             data=to_excel_bytes(df, "Rapor"),
-            file_name=f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            file_name=f"{prefix}_{timestamp}.xlsx",
+            mime=(
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
+            ),
             use_container_width=True,
+            key=f"manager_excel_{prefix}",
         )
+
     with c2:
         st.download_button(
             "CSV indir",
             data=to_csv_bytes(df),
-            file_name=f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+            file_name=f"{prefix}_{timestamp}.csv",
             mime="text/csv",
             use_container_width=True,
+            key=f"manager_csv_{prefix}",
         )
+
     with c3:
         if SimpleDocTemplate is None:
-            st.button("PDF için reportlab gerekli", disabled=True, use_container_width=True)
+            st.button(
+                "PDF için reportlab gerekli",
+                disabled=True,
+                use_container_width=True,
+                key=f"manager_pdf_disabled_{prefix}",
+            )
         else:
             st.download_button(
                 "PDF indir",
                 data=to_pdf_bytes(df, "Çelebi Vardiya ve Araç Raporu"),
-                file_name=f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                file_name=f"{prefix}_{timestamp}.pdf",
                 mime="application/pdf",
                 use_container_width=True,
+                key=f"manager_pdf_{prefix}",
             )
-
 
 def sidebar_logo() -> None:
     st.sidebar.markdown("### ✈️ Driver Panel")
@@ -2456,23 +2499,6 @@ def page_shift_entry() -> None:
     today_df = get_shift_logs(date.today(), date.today())
     st.dataframe(today_df, use_container_width=True, hide_index=True)
 
-    if st.session_state.get("auth_role") == "coordinator":
-        coordinator_export_df = get_shift_logs(
-            start=None,
-            end=None,
-            include_passive=True,
-        )
-        if not coordinator_export_df.empty:
-            st.download_button(
-                "Excel olarak indir",
-                data=to_excel_bytes(coordinator_export_df, "Geçmiş Veriler"),
-                file_name=f"tum_vardiya_kayitlari_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-                key="coordinator_all_logs_excel_download",
-            )
-
-
 def page_history() -> None:
     render_header(
         "Geçmiş Loglar ve Filtreleme",
@@ -2801,7 +2827,11 @@ def page_reports() -> None:
 
     st.markdown("### Filtrelenmiş rapor verisi")
     st.dataframe(df, use_container_width=True, hide_index=True)
-    show_downloads(df, "analiz_raporu_filtreli")
+    show_downloads(
+        df,
+        "analiz_raporu_filtreli",
+        allow_coordinator_excel=True,
+    )
 
 def page_settings() -> None:
     render_header(
